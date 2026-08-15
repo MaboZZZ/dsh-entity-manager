@@ -3,6 +3,15 @@
 一个本地桌面应用：管理多个独立的 DSH（DeepSeek Harness）实体，每个实体
 可锁定不同的 DSH 版本，互不干扰。
 
+## 项目地址
+
+| 平台 | 地址 | 说明 |
+|---|---|---|
+| GitHub | https://github.com/MaboZZZ/dsh-entity-manager | 源码主站（国际）|
+| Gitee（国内镜像）| https://gitee.com/YOUR_GITEE_USERNAME/dsh-entity-manager | 国内访问快，自动同步 |
+
+> 国内用户下载/查看代码建议走 **Gitee**（GitHub 在国内访问不稳定）。
+
 ## 打包（生成桌面应用产物）
 
 ### 一键打包（推荐，无需编程经验）
@@ -31,6 +40,14 @@ pnpm --filter @dshm/shell package
 | macOS | `DSH Entity Manager-*-mac.zip`（解压即用）|
 | Windows | `*-win-unpacked/` + nsis 安装包 |
 | Linux | `*.AppImage` |
+
+## 国内用户下载
+
+- **Gitee Releases**（推荐，国内快）：见上方 Gitee 镜像仓库的 Releases 页面
+- **网盘**（备选）：夸克 / 阿里云盘 分享链接见项目公告
+- **GitHub Releases**：https://github.com/MaboZZZ/dsh-entity-manager/releases （国内可能较慢）
+
+> 安装包约 100MB+；macOS 用户下载后解压双击 `.app` 即可使用。
 
 ## 使用产物
 
