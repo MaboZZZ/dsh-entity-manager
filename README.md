@@ -8,7 +8,7 @@
 | 平台 | 地址 | 说明 |
 |---|---|---|
 | GitHub | https://github.com/MaboZZZ/dsh-entity-manager | 源码主站（国际）|
-| Gitee（国内镜像）| https://gitee.com/YOUR_GITEE_USERNAME/dsh-entity-manager | 国内访问快，自动同步 |
+| Gitee（国内镜像）| https://gitee.com/MaboZZZ/dsh-entity-manager | 国内访问快，自动同步 |
 
 > 国内用户下载/查看代码建议走 **Gitee**（GitHub 在国内访问不稳定）。
 
