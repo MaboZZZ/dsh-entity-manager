@@ -7,3 +7,4 @@ dist/
 .npm-cache/
 .pnpm-store/
 .dshm-*/
+apps/shell/release/
