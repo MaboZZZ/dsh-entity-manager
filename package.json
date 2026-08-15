@@ -1,0 +1,17 @@
+{
+  "name": "dsh-entity-manager",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visual on-device manager for independent DSH entities with per-entity version pinning",
+  "type": "module",
+  "scripts": {
+    "dev:manager": "pnpm --filter @dshm/manager dev",
+    "dev:ui": "pnpm --filter @dshm/ui dev",
+    "dev:shell": "pnpm --filter @dshm/shell dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
