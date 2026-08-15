@@ -14,6 +14,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(message)
   }
+  if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
 
@@ -27,4 +28,36 @@ export function getEntities(): Promise<EntityInfo[]> {
 
 export function getVersions(): Promise<VersionInfo[]> {
   return request<VersionInfo[]>('/versions')
+}
+
+export function startEntity(id: string): Promise<EntityInfo> {
+  return request<EntityInfo>(`/entities/${id}/start`, { method: 'POST' })
+}
+
+export function stopEntity(id: string): Promise<EntityInfo> {
+  return request<EntityInfo>(`/entities/${id}/stop`, { method: 'POST' })
+}
+
+export function deleteEntity(id: string): Promise<void> {
+  return request<void>(`/entities/${id}`, { method: 'DELETE' })
+}
+
+export function getLogs(id: string, lines = 200): Promise<{ id: string; logs: string }> {
+  return request<{ id: string; logs: string }>(`/entities/${id}/logs?lines=${String(lines)}`)
+}
+
+export function installVersion(source: 'npm' | 'git-tag', ref: string): Promise<VersionInfo> {
+  return request<VersionInfo>('/versions/install', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source, ref }),
+  })
+}
+
+export function registerLocal(label: string, checkoutDir: string): Promise<VersionInfo> {
+  return request<VersionInfo>('/versions/register-local', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ label, checkoutDir }),
+  })
 }

@@ -6,3 +6,4 @@ dist/
 .dshm/
 .npm-cache/
 .pnpm-store/
+.dshm-*/

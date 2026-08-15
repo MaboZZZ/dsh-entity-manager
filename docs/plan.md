@@ -1,6 +1,6 @@
 # DSH Entity Manager — 设计方案
 
-> 状态：骨架完成（2025-08）。本文件是已确认方案的权威记录；实现偏离时
+> 状态：M0 完成（2025-08）。本文件是已确认方案的权威记录；实现偏离时
 > 先改这里。
 
 ## 1. 目标
@@ -93,6 +93,20 @@
 - 回滚 = 重 pin 旧版本（数据保留）；
 - "克隆实体" = 复制数据目录到新实体并 pin 新版本，旧实体原样保留；
 - 跨版本数据格式可能不兼容（rc 阶段），UI 对版本差异给出提示。
+
+## 6.1 M0 实测记录（2025-08）
+
+- `dsh --profile web --port <n>` + `DSH_HOME=<dir>` 是最小拉起面；`--host`
+  仅允许 `127.0.0.1`（`0.0.0.0` 被安全拒绝），正好满足 loopback 编排；
+- 本地 checkout（source tree）用 `node --import tsx/esm apps/cli/src/bin.ts`
+  直接拉起，无需构建；Node 22.18 实际可跑（engines 仅提示不强制）；
+- 实体生命周期全链路已验证：创建 → start（自动分配端口并**持久化进 spec**，
+  重启端口稳定）→ 健康探测置 running → stop（SIGTERM→SIGKILL）→ 重启后
+  reconcile 把残留 running 校正为 stopped；
+- 每个实体独立 `$DSH_HOME`（`storages/workspace.json` + `profiles/`），
+  互不可见；`npm install --ignore-scripts` 隔离安装 DSH 版本到版本仓库；
+- 管理器 API：`/api/entities/{id}/start|stop|logs`、`/api/versions/install`、
+  `/api/versions/register-local`；UI 看板已可操作（start/stop/open/logs/install）。
 
 ## 7. 数据布局
 

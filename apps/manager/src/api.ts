@@ -1,8 +1,18 @@
 /**
  * Manager JSON API (loopback-only HTTP).
  *
- * Skeleton routes: health, entity CRUD (persist only; spawn comes in M0),
- * version listing (live npm view + installed scan; install comes in M0/M1).
+ * Routes (M0):
+ *   GET    /api/health
+ *   GET    /api/entities
+ *   POST   /api/entities
+ *   GET    /api/entities/{id}
+ *   DELETE /api/entities/{id}
+ *   POST   /api/entities/{id}/start
+ *   POST   /api/entities/{id}/stop
+ *   GET    /api/entities/{id}/logs?lines=200
+ *   GET    /api/versions
+ *   POST   /api/versions/install        { source, ref }
+ *   POST   /api/versions/register-local { label, checkoutDir }
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -12,6 +22,7 @@ import type {
   EntitySpec,
   HealthInfo,
   InstallVersionRequest,
+  RegisterLocalRequest,
 } from '@dshm/shared'
 import { EntityStore } from './store.ts'
 import { EntityProcessManager } from './spawn.ts'
@@ -23,7 +34,14 @@ export interface ManagerServerOptions {
   version: string
 }
 
-type Handler = (req: IncomingMessage, res: ServerResponse, rest: string) => Promise<void> | void
+interface RouteMatch {
+  method: string
+  pattern: RegExp
+  names: string[]
+}
+
+type RouteParams = Record<string, string>
+type Handler = (req: IncomingMessage, res: ServerResponse, params: RouteParams) => Promise<void> | void
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -59,11 +77,46 @@ function slugify(name: string): string {
   return slug || 'entity'
 }
 
+function compileRoute(key: string): RouteMatch {
+  const [method, path] = key.split(' ')
+  const names: string[] = []
+  const segments = (path ?? '').split('/').map((segment) => {
+    if (segment === '{id}') {
+      names.push('id')
+      return '([^/]+)'
+    }
+    return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  })
+  return { method: method ?? 'GET', pattern: new RegExp(`^${segments.join('/')}$`), names }
+}
+
+/** Look up an entity by route id, sending a 404 response on failure. */
+function entityOr404(
+  res: ServerResponse,
+  store: EntityStore,
+  id: string | undefined,
+): ReturnType<EntityStore['get']> {
+  if (!id) {
+    sendError(res, 404, 'missing entity id')
+    return undefined
+  }
+  const info = store.get(id)
+  if (!info) sendError(res, 404, `entity ${id} not found`)
+  return info
+}
+
 export function createManagerServer(options: ManagerServerOptions) {
   const store = new EntityStore(options.rootDir)
   const versions = new VersionRegistry(join(options.rootDir, 'versions'))
-  const processes = new EntityProcessManager(join(options.rootDir, 'homes'))
+  const processes = new EntityProcessManager(
+    join(options.rootDir, 'homes'),
+    join(options.rootDir, 'logs'),
+    versions,
+    store,
+  )
   const startedAt = Date.now()
+
+  processes.reconcile()
 
   const routes = new Map<string, Handler>()
 
@@ -106,9 +159,49 @@ export function createManagerServer(options: ManagerServerOptions) {
     sendJson(res, 201, info)
   })
 
-  routes.set('DELETE /api/entities/{id}', (_req, res, id) => {
-    if (!store.remove(id)) return sendError(res, 404, `entity ${id} not found`)
+  routes.set('GET /api/entities/{id}', (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    sendJson(res, 200, info)
+  })
+
+  routes.set('DELETE /api/entities/{id}', async (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    if (info.status.phase === 'running' || info.status.phase === 'starting') {
+      await processes.stop(info)
+    }
+    store.remove(info.spec.id)
     res.writeHead(204).end()
+  })
+
+  routes.set('POST /api/entities/{id}/start', async (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    try {
+      const updated = await processes.start(info)
+      sendJson(res, 200, updated)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'VersionNotInstalled') {
+        return sendError(res, 409, error.message)
+      }
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('POST /api/entities/{id}/stop', async (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const updated = await processes.stop(info)
+    sendJson(res, 200, updated)
+  })
+
+  routes.set('GET /api/entities/{id}/logs', (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const url = new URL(_req.url ?? '/', 'http://localhost')
+    const lines = Math.max(1, Math.min(5000, Number(url.searchParams.get('lines') ?? 200) || 200))
+    sendJson(res, 200, { id: info.spec.id, logs: processes.getLogs(info.spec.id, lines) })
   })
 
   routes.set('GET /api/versions', async (_req, res) => {
@@ -130,22 +223,37 @@ export function createManagerServer(options: ManagerServerOptions) {
     }
   })
 
+  routes.set('POST /api/versions/register-local', async (req, res) => {
+    const raw = (await readJson(req)) as Partial<RegisterLocalRequest> | undefined
+    if (!raw || typeof raw.label !== 'string' || raw.label === '' || typeof raw.checkoutDir !== 'string') {
+      return sendError(res, 400, 'label and checkoutDir are required')
+    }
+    try {
+      const info = await versions.registerLocal(raw.label, raw.checkoutDir)
+      sendJson(res, 201, info)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  const compiled = [...routes.entries()].map(([key, handler]) => ({
+    match: compileRoute(key),
+    handler,
+  }))
+
   const server: Server = createServer((req, res) => {
     const method = req.method ?? 'GET'
     const url = new URL(req.url ?? '/', 'http://localhost')
     const path = url.pathname
-
-    // exact match first, then /{id} suffix match
-    const exact = routes.get(`${method} ${path}`)
-    if (exact) return void exact(req, res, '')
-
-    for (const [key, handler] of routes) {
-      const match = /^(GET|POST|DELETE) (\/api\/[^/]+)\/\{id\}$/.exec(key)
-      if (!match || match[1] !== method || !path.startsWith(match[2] ?? '/')) continue
-      const rest = path.slice((match[2] ?? '').length)
-      if (rest.startsWith('/') && !rest.slice(1).includes('/')) {
-        return void handler(req, res, decodeURIComponent(rest.slice(1)))
-      }
+    for (const { match, handler } of compiled) {
+      if (match.method !== method) continue
+      const result = match.pattern.exec(path)
+      if (!result) continue
+      const params: RouteParams = {}
+      match.names.forEach((name, index) => {
+        params[name] = decodeURIComponent(result[index + 1] ?? '')
+      })
+      return void handler(req, res, params)
     }
     sendError(res, 404, `no route ${method} ${path}`)
   })

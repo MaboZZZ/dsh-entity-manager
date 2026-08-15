@@ -49,4 +49,25 @@ body {
 .phase { font-size: 11px; padding: 2px 8px; border-radius: 99px; }
 .phase.running { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .phase.error { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.phase.starting, .phase.stopping { color: #ffb84d; background: color-mix(in srgb, #ffb84d 12%, transparent); }
 .phase.stopped { color: var(--muted); }
+
+.actions { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+.actions button, .actions a {
+  font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: #22262f; color: var(--text);
+  text-decoration: none;
+}
+.actions button:hover, .actions a:hover { border-color: var(--accent); }
+.actions button.danger:hover { border-color: var(--err); color: var(--err); }
+
+.banner { border-radius: 8px; padding: 10px 14px; margin: 16px 0; font-size: 14px; }
+.banner.error { background: color-mix(in srgb, var(--err) 15%, transparent); border: 1px solid var(--err); }
+.banner:not(.error) { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--accent); }
+
+.logs {
+  background: #0c0e12; border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; font-size: 12px; line-height: 1.5; overflow-x: auto;
+  max-height: 260px; white-space: pre-wrap; word-break: break-all;
+}
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 8px 0; }

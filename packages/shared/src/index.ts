@@ -71,11 +71,30 @@ export interface VersionInfo {
   installDir?: string
   installedAt?: string
   summary?: string
+  /** how to launch this version's `dsh` bin */
+  launch?: VersionLaunch
+}
+
+/** How the manager spawns a pinned version. */
+export interface VersionLaunch {
+  /** extra node arguments before the script (e.g. --import tsx/esm) */
+  nodeArgs: string[]
+  /** absolute path of the dsh bin script */
+  script: string
+  /** working directory for the child process */
+  cwd: string
 }
 
 export interface InstallVersionRequest {
   source: VersionSourceKind
   ref: string
+}
+
+export interface RegisterLocalRequest {
+  /** label shown in the version list, e.g. "dev" */
+  label: string
+  /** absolute path of a DSH checkout (source tree) */
+  checkoutDir: string
 }
 
 export interface CreateEntityRequest {
