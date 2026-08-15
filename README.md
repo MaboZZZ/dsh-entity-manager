@@ -14,24 +14,12 @@
 
 ## 打包（生成桌面应用产物）
 
-### 一键打包（推荐，无需编程经验）
+双击项目根目录的脚本即可，无需编程经验：
 
-- **macOS**：双击项目根目录的 **`build-app.command`**，脚本会自动：
-  安装依赖 → 构建 → 生成安装包 → 打开产物文件夹并提示安装包位置。
-- **Windows**：双击项目根目录的 **`build-app.bat`**，流程相同。
+- **macOS**：双击 **`build-app.command`**，自动完成 安装依赖 → 构建 → 生成安装包 → 打开产物文件夹并提示位置
+- **Windows**：双击 **`build-app.bat`**，流程相同
 
-（首次使用需已安装 Node.js 与 pnpm；打包机需要能联网下载依赖。）
-
-### 手动打包
-
-前置要求：Node ≥ 22、pnpm ≥ 9。
-
-```bash
-pnpm install
-pnpm --filter @dshm/manager build
-pnpm --filter @dshm/ui build
-pnpm --filter @dshm/shell package
-```
+（首次使用需已安装 Node.js 与 pnpm；需联网下载依赖。）
 
 产物在项目一级目录 `release/`：
 
@@ -44,7 +32,6 @@ pnpm --filter @dshm/shell package
 ## 国内用户下载
 
 - **Gitee Releases**（推荐，国内快）：见上方 Gitee 镜像仓库的 Releases 页面
-- **网盘**（备选）：夸克 / 阿里云盘 分享链接见项目公告
 - **GitHub Releases**：https://github.com/MaboZZZ/dsh-entity-manager/releases （国内可能较慢）
 
 > 安装包约 100MB+；macOS 用户下载后解压双击 `.app` 即可使用。
