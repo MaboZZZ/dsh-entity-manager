@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { VersionInfo, VersionLaunch, VersionSourceKind } from '@dshm/shared'
+import { resolveNpm } from './npm.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -59,15 +60,16 @@ export class VersionRegistry {
     // npm source: live registry view with an isolated cache.
     let npmVersions: string[] = []
     try {
+      const npm = await resolveNpm()
       const { stdout } = await execFileAsync(
-        'npm',
-        ['view', DSH_PACKAGE, 'versions', '--json'],
+        npm.cmd,
+        [...npm.prefix, 'view', DSH_PACKAGE, 'versions', '--json'],
         { env: this.npmEnv() },
       )
       const parsed = JSON.parse(stdout) as unknown
       if (Array.isArray(parsed)) npmVersions = parsed.filter((v): v is string => typeof v === 'string')
     } catch {
-      // registry unreachable: fall back to installed-only
+      // registry unreachable or npm CLI missing: fall back to installed-only
     }
 
     const out: VersionInfo[] = []
@@ -152,7 +154,8 @@ export class VersionRegistry {
       'utf8',
     )
     // --ignore-scripts: never run install scripts from the registry.
-    await execFileAsync('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
+    const npm = await resolveNpm()
+    await execFileAsync(npm.cmd, [...npm.prefix, 'install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
       cwd: dir,
       env: this.npmEnv(),
     })
@@ -229,6 +232,8 @@ export class VersionRegistry {
       // Optional registry override (e.g. DSHM_NPM_REGISTRY=https://registry.npmmirror.com
       // for faster installs on China networks); falls back to the environment.
       ...(process.env.DSHM_NPM_REGISTRY ? { npm_config_registry: process.env.DSHM_NPM_REGISTRY } : {}),
+      // Under Electron (M4), node invocations must run the binary as plain Node.
+      ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     }
   }
 

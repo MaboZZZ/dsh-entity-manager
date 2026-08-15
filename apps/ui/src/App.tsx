@@ -15,6 +15,7 @@ import {
   installVersion,
   listSnapshots,
   patchEntity,
+  registerLocal,
   restoreSnapshot,
   startEntity,
   stopEntity,
@@ -122,7 +123,7 @@ export function App() {
 
             <ImportPanel act={act} onImported={() => void refresh()} />
 
-            <VersionsPanel versions={versions} act={act} />
+            <VersionsPanel versions={versions} act={act} onRefresh={refresh} />
             <JobsPanel jobs={jobs} />
           </>
         )}
@@ -384,11 +385,48 @@ function ImportPanel(props: {
 function VersionsPanel(props: {
   versions: VersionInfo[]
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
+  onRefresh: () => Promise<unknown>
 }) {
-  const { versions, act } = props
+  const { versions, act, onRefresh } = props
+  const [showAddLocal, setShowAddLocal] = useState(false)
+  const [localLabel, setLocalLabel] = useState('')
+  const [localPath, setLocalPath] = useState('')
   return (
     <section className="panel">
-      <h2>Versions</h2>
+      <div className="panel-head">
+        <h2>Versions</h2>
+        <span className="actions">
+          <button onClick={() => void act('refreshing versions', onRefresh)}>⟳ refresh</button>
+          <button onClick={() => setShowAddLocal(!showAddLocal)}>+ add local version</button>
+        </span>
+      </div>
+      {showAddLocal && (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!localLabel.trim() || !localPath.trim()) return
+            void act('adding local version', async () => {
+              await registerLocal(localLabel.trim(), localPath.trim())
+              setLocalLabel('')
+              setLocalPath('')
+              setShowAddLocal(false)
+              onRefresh()
+            })
+          }}
+        >
+          <label>Label
+            <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" required />
+          </label>
+          <label>DSH checkout path on this machine
+            <input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/path/to/deepseek-harness" required />
+          </label>
+          <div className="form-row">
+            <button type="submit">Register local version</button>
+          </div>
+        </form>
+      )}
+      {versions.length === 0 && <p className="muted">No versions found — try the refresh button, or add a local checkout.</p>}
       <ul className="cards">
         {versions.map((version) => (
           <li key={`${version.source}:${version.ref}`} className="card">
