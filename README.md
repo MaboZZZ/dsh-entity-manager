@@ -14,7 +14,7 @@ pnpm --filter @dshm/ui build
 pnpm --filter @dshm/shell package
 ```
 
-产物在 `apps/shell/release/`：
+产物在项目一级目录 `release/`：
 
 | 平台 | 产物 |
 |---|---|
