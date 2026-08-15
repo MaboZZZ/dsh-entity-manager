@@ -129,7 +129,7 @@ export function App() {
                 <h2>{t('entities')}</h2>
                 {entities.length > 0 && (
                   <span className="actions">
-                    <button onClick={() => void act(t('exportAllBusy'), exportAllWithDir)}>{t('exportAll')}</button>
+                    <button className="btn-secondary" onClick={() => void act(t('exportAllBusy'), exportAllWithDir)}>{t('exportAll')}</button>
                   </span>
                 )}
               </div>
@@ -138,14 +138,16 @@ export function App() {
                 : (
                   <ul className="cards">
                     {entities.map((entity) => (
-                      <li key={entity.spec.id} className="card">
-                        <button className="link" onClick={() => setDetail(entity)}>
-                          <strong>{entity.spec.name}</strong>
-                        </button>
-                        <span className="badge">{entity.spec.version.ref}</span>
-                        <span className={`phase ${entity.status.phase}`}>{entity.status.phase}</span>
-                        {entity.status.port !== null && <code className="muted">:{entity.status.port}</code>}
-                        <span className="actions">
+                      <li key={entity.spec.id} className="card entity-row">
+                        <div className="entity-main">
+                          <button className="link" onClick={() => setDetail(entity)}>
+                            <strong>{entity.spec.name}</strong>
+                          </button>
+                          <span className="badge">{entity.spec.version.ref}</span>
+                          <span className={`phase ${entity.status.phase}`}>{entity.status.phase}</span>
+                          {entity.status.port !== null && <code className="muted">:{entity.status.port}</code>}
+                        </div>
+                        <div className="entity-actions">
                           {entity.status.phase === 'running'
                             ? <button onClick={() => void act(t('stoppingBusy'), () => stopEntity(entity.spec.id))}>{t('stop')}</button>
                             : <button onClick={() => void act(t('startingBusy'), () => startEntity(entity.spec.id))}>{t('start')}</button>}
@@ -158,7 +160,7 @@ export function App() {
                             if (path) setError(`${t('exportedTo')} ${path}`)
                           })}>{t('export')}</button>
                           <button className="danger" onClick={() => void act(t('deletingBusy'), () => deleteEntity(entity.spec.id))}>{t('delete')}</button>
-                        </span>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -532,9 +534,9 @@ function VersionsPanel(props: {
               </button>
             </div>
           </label>
-          <div className="form-row">
-            <button disabled={!localLabel.trim() || !localPath.trim()} onClick={registerLocalVersion}>{t('register')}</button>
-            <button onClick={() => setModal(null)}>{t('cancel')}</button>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={() => setModal(null)}>{t('cancel')}</button>
+            <button className="btn-primary" disabled={!localLabel.trim() || !localPath.trim()} onClick={registerLocalVersion}>{t('register')}</button>
           </div>
         </Modal>
       )}
@@ -549,11 +551,11 @@ function VersionsPanel(props: {
               </button>
             </div>
           </label>
-          <div className="form-row">
-            <button disabled={!pendingDir || pendingDir === settingsDir} onClick={applyDataDir}>{t('apply')}</button>
-            <button onClick={() => setModal(null)}>{t('cancel')}</button>
-          </div>
           <span className="muted">{t('applyDirHint')}</span>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={() => setModal(null)}>{t('cancel')}</button>
+            <button className="btn-primary" disabled={!pendingDir || pendingDir === settingsDir} onClick={applyDataDir}>{t('apply')}</button>
+          </div>
         </Modal>
       )}
 
