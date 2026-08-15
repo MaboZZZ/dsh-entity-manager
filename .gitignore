@@ -8,3 +8,5 @@ dist/
 .pnpm-store/
 .dshm-*/
 apps/shell/release/
+DSH架构/
+dsh-plugin-opportunities.md

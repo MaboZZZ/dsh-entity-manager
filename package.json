@@ -1,6 +1,6 @@
 {
   "name": "dsh-entity-manager",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Visual on-device manager for independent DSH entities with per-entity version pinning",
   "type": "module",
