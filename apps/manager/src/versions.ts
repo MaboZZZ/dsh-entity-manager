@@ -10,7 +10,7 @@
  *  - git-tag source: planned for M3.
  */
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { VersionInfo, VersionLaunch, VersionSourceKind } from '@dshm/shared'
@@ -184,11 +184,23 @@ export class VersionRegistry {
       if (existing) return this.toInfo(existing, existing)
     }
     mkdirSync(this.versionsDir, { recursive: true })
+    // blob:none keeps the initial clone small (trees/commits only); blobs are
+    // fetched on checkout, which tolerates flaky networks better than one big
+    // transfer. Retry once on failure.
+    const clone = async (args: string[]): Promise<void> => {
+      try {
+        await execFileAsync('git', ['clone', '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
+      } catch (error) {
+        rmSync(dir, { recursive: true, force: true })
+        await execFileAsync('git', ['clone', '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
+      }
+    }
     try {
-      await execFileAsync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', DSH_REPOSITORY, dir], { env: process.env })
+      await clone(['--branch', ref, '--single-branch', DSH_REPOSITORY, dir])
     } catch {
-      // ref is probably a commit sha or a branch that cannot be single-branch-cloned
-      await execFileAsync('git', ['clone', '--depth', '1', DSH_REPOSITORY, dir], { env: process.env })
+      // ref is probably a commit sha or non-branch/tag name
+      rmSync(dir, { recursive: true, force: true })
+      await clone([DSH_REPOSITORY, dir])
       await execFileAsync('git', ['-C', dir, 'checkout', ref], { env: process.env })
     }
     const script = join(dir, 'apps', 'cli', 'src', 'bin.ts')

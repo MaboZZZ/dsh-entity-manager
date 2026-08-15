@@ -72,11 +72,25 @@ curl -X POST http://127.0.0.1:4180/api/entities \
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 骨架 | 工作区 + 共享类型 + 管理器 API 骨架 + UI 看板占位 + Electron 壳 | ✅ |
-| M0 | 实体真实拉起：版本安装（npm/local 源）、start/stop/健康探测/日志、独立 `$DSH_HOME`+端口、双版本并行验证 | ✅ 见 `scripts/verify-m0.sh` |
-| M1 | 核心循环完善：创建向导、模型配置、状态推送、实体详情页 | ⏳ 下一步 |
-| M2 | 实体详情（内嵌 GUI + 日志流）、端口分配、快照 | |
-| M3 | 版本切换 / 升级快照 / 回滚、git-tag 源、实体导入导出 | |
-| M4 | Electron 打包分发、托盘、自启；可选 L2/L3 隔离 | |
+| M0 | 实体真实拉起：版本安装（npm/local 源）、start/stop/健康探测/日志、独立 `$DSH_HOME`+端口、双版本并行验证 | ✅ `scripts/verify-m0.sh` |
+| M1 | 异步安装任务、创建向导、实体详情（内嵌 GUI + 实时日志 + 版本切换）、PATCH API、UI 轮询 | ✅ |
+| M2 | 快照（spec + home 打包）、回滚、导出/导入 bundle | ✅ |
+| M3 | 版本切换/回滚、git-tag 源（clone + pnpm install）、实体导入导出 | ✅ |
+| M4 | Electron 壳：内嵌管理器、托盘/菜单/自启、`ELECTRON_RUN_AS_NODE` 实体拉起、打包配置 | ✅ |
+| 后续 | L2/L3 隔离、状态推送（SSE）、打包产物 CI 分发 | 预留 |
+
+## 桌面应用（M4）
+
+```bash
+pnpm --filter @dshm/manager build   # 管理器编译为 JS（Electron 主进程需要）
+pnpm --filter @dshm/ui build        # UI 生产构建
+pnpm --filter @dshm/shell dev       # 启动 Electron（开发模式，需 vite dev 在跑）
+pnpm --filter @dshm/shell package   # electron-builder 打包（mac/win/linux）
+```
+
+Electron 主进程内嵌管理器（端口 4180 被占时自动换口）；实体进程以
+`ELECTRON_RUN_AS_NODE=1` 方式用 Electron 自带的 Node 22.21 拉起（顺带满足
+DSH 的 Node ≥ 22.19 要求）；退出时自动停止所有运行中的实体。
 
 ## 环境变量
 

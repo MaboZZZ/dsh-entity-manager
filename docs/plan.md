@@ -74,9 +74,17 @@
 
 ### 4.3 Electron 壳（apps/shell）
 
-- 主窗口加载 ui；每实体一个 webview 标签页指向其 loopback 地址；
-- 随应用启动管理器（进程内或子进程）；
-- 托盘 / 自启 / 打包（M4）。
+- 主进程**内嵌管理器**（`createManagerServer`，端口 4180 被占时自动换口）；
+- 实体子进程以 `ELECTRON_RUN_AS_NODE=1` 用 Electron 自带 Node（22.21）拉起，
+  顺带满足 DSH 的 Node ≥ 22.19 要求；应用退出时自动停止全部实体；
+- 渲染进程通过 preload 桥（`window.dshm.managerUrl`）拿到管理器地址，
+  不依赖 vite 代理；管理器 API 对 loopback 开放 CORS（仅绑 127.0.0.1）；
+- 托盘 / 菜单（开管理器、开实体 GUI 独立窗口、开机自启开关）/ 退出清理；
+- 打包：electron-builder（mac dmg/zip、win nsis、linux AppImage），
+  UI 以 extraResources 进 `process.resourcesPath/ui-dist`。
+
+已知问题：`app-builder-lib@26.15.3` 声明 `@electron/get@^3.0.0` 但实际需要
+3.1.0 才有的 `ElectronDownloadCacheMode` → pnpm override 强制 3.1.0。
 
 ## 5. 隔离级别
 

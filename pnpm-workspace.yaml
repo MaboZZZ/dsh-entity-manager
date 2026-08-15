@@ -4,5 +4,11 @@ packages:
 
 allowBuilds:
   electron: true
-  electron-winstaller: set this to true or false
+  electron-winstaller: true
   esbuild: true
+
+overrides:
+  # app-builder-lib 26.15.3 calls ElectronDownloadCacheMode, which exists only
+  # in @electron/get >= 3.1.0; electron itself declares ^2.0.0. Force one
+  # version that satisfies both consumers (downloadArtifact API is stable).
+  "@electron/get": "3.1.0"

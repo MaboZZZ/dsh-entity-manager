@@ -23,6 +23,7 @@
   "build": {
     "appId": "ai.dshm.entity-manager",
     "productName": "DSH Entity Manager",
+    "electronVersion": "37.10.3",
     "asar": true,
     "directories": {
       "output": "release"
