@@ -5,3 +5,4 @@ dist/
 # local manager runtime data
 .dshm/
 .npm-cache/
+.pnpm-store/
