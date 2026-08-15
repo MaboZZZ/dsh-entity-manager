@@ -32,6 +32,7 @@ import type {
 import { JobRunner } from './jobs.ts'
 import { EntityStore } from './store.ts'
 import { SnapshotManager } from './snapshots.ts'
+import { SettingsStore } from './settings.ts'
 import { EntityProcessManager } from './spawn.ts'
 import { NotImplemented, VersionRegistry } from './versions.ts'
 
@@ -114,7 +115,8 @@ function entityOr404(
 
 export function createManagerServer(options: ManagerServerOptions) {
   const store = new EntityStore(options.rootDir)
-  const versions = new VersionRegistry(join(options.rootDir, 'versions'))
+  const settings = new SettingsStore(options.rootDir)
+  const versions = new VersionRegistry(() => settings.versionsDir)
   const snapshots = new SnapshotManager(options.rootDir)
   const jobs = new JobRunner()
   const processes = new EntityProcessManager(
@@ -142,6 +144,23 @@ export function createManagerServer(options: ManagerServerOptions) {
 
   routes.set('GET /api/entities', (_req, res) => {
     sendJson(res, 200, store.list())
+  })
+
+  routes.set('GET /api/settings', (_req, res) => {
+    sendJson(res, 200, { versionsDir: settings.versionsDir })
+  })
+
+  routes.set('PUT /api/settings', async (req, res) => {
+    const raw = (await readJson(req)) as { versionsDir?: string } | undefined
+    if (!raw || typeof raw.versionsDir !== 'string' || raw.versionsDir.trim() === '') {
+      return sendError(res, 400, 'versionsDir is required')
+    }
+    try {
+      const result = settings.setVersionsDir(raw.versionsDir)
+      sendJson(res, 200, result)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : String(error))
+    }
   })
 
   routes.set('POST /api/entities', async (req, res) => {

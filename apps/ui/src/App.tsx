@@ -11,6 +11,7 @@ import {
   getHealth,
   getJobs,
   getLogs,
+  getSettings,
   getVersions,
   importEntity,
   installVersion,
@@ -21,6 +22,7 @@ import {
   restoreSnapshot,
   startEntity,
   stopEntity,
+  updateSettings,
 } from './api.ts'
 import { useLang } from './i18n.ts'
 
@@ -166,7 +168,7 @@ export function App() {
 
             <ImportPanel act={act} onImported={() => void refresh()} t={t} />
 
-            <VersionsPanel versions={versions} jobs={jobs} act={act} onRefresh={refresh} t={t} />
+            <VersionsPanel versions={versions} jobs={jobs} act={act} onRefresh={refresh} onNotice={setError} t={t} />
           </>
         )}
     </div>
@@ -438,13 +440,39 @@ function VersionsPanel(props: {
   jobs: JobInfo[]
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   onRefresh: () => Promise<unknown>
+  onNotice: (message: string) => void
   t: T
 }) {
-  const { versions, jobs, act, onRefresh, t } = props
+  const { versions, jobs, act, onRefresh, onNotice, t } = props
   const [showAddLocal, setShowAddLocal] = useState(false)
   const [localLabel, setLocalLabel] = useState('')
   const [localPath, setLocalPath] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [settingsDir, setSettingsDir] = useState<string | null>(null)
+  const [pendingDir, setPendingDir] = useState<string | null>(null)
+
+  useEffect(() => {
+    void getSettings().then((s) => setSettingsDir(s.versionsDir)).catch(() => {})
+  }, [])
+
+  const chooseDataDir = async () => {
+    const dir = await pickDirectory()
+    if (dir) setPendingDir(dir)
+  }
+
+  const applyDataDir = () => {
+    if (!pendingDir || pendingDir === settingsDir) return
+    void act(t('applyingBusy'), async () => {
+      const result = await updateSettings(pendingDir)
+      setSettingsDir(result.versionsDir)
+      setPendingDir(null)
+      const parts: string[] = [`${t('changedDir')}: ${result.versionsDir}`]
+      if (result.moved.length > 0) parts.push(`${t('movedVersions')}: ${result.moved.join(', ')}`)
+      if (result.errors.length > 0) parts.push(`${t('moveErrors')}: ${result.errors.join('; ')}`)
+      onNotice(parts.join(' · '))
+      onRefresh()
+    })
+  }
 
   const installJobs = jobs.filter((j) => j.kind === 'version-install')
   const activeInstall = installJobs.find((j) => j.status === 'pending' || j.status === 'running')
@@ -464,6 +492,21 @@ function VersionsPanel(props: {
           <button onClick={() => void act(t('refreshingBusy'), onRefresh)}>⟳ {t('refresh')}</button>
           <button onClick={() => setShowAddLocal(!showAddLocal)}>+ {t('addLocal')}</button>
         </span>
+      </div>
+      <div className="version-detail dir-settings">
+        <span className="muted">{t('versionDataDir')}</span>
+        <div className="dir-pick">
+          <code>{pendingDir ?? settingsDir ?? '…'}</code>
+          <button type="button" onClick={() => void chooseDataDir()}>{t('chooseDir')}</button>
+          <button
+            type="button"
+            disabled={!pendingDir || pendingDir === settingsDir}
+            onClick={applyDataDir}
+          >
+            {t('apply')}
+          </button>
+        </div>
+        <span className="muted">{t('applyDirHint')}</span>
       </div>
       {showAddLocal && (
         <form

@@ -49,7 +49,7 @@ pnpm --filter @dshm/shell package
 | 数据 | 位置 |
 |---|---|
 | 管理器数据根 | `~/.dsh-entities`（可用 `DSHM_HOME` 改）|
-| 已安装的版本 | `~/.dsh-entities/versions/<版本号>/`（每个版本独立安装）|
+| 已安装的版本（可在界面中自选目录）| `~/.dsh-entities/versions/<版本号>/`（每个版本独立安装）|
 | 实体数据 | `~/.dsh-entities/homes/<实体id>/`（即实体的 `$DSH_HOME`）|
 | 快照 / 导出 | `~/.dsh-entities/snapshots/`、`~/.dsh-entities/exports/` |
 

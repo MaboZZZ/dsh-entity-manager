@@ -49,8 +49,13 @@ interface InstalledManifest {
 }
 
 export class VersionRegistry {
-  constructor(readonly versionsDir: string) {
-    mkdirSync(versionsDir, { recursive: true })
+  /** Directory is dynamic: the user can re-point it via settings. */
+  private get dir(): string {
+    return this.getDir()
+  }
+
+  constructor(private readonly getDir: () => string) {
+    mkdirSync(getDir(), { recursive: true })
   }
 
   async list(): Promise<VersionInfo[]> {
@@ -105,7 +110,7 @@ export class VersionRegistry {
     if (!existsSync(tsx)) {
       throw new Error(`checkout has no tsx dependency at ${tsx}; run pnpm install in the checkout first`)
     }
-    const dir = join(this.versionsDir, label)
+    const dir = join(this.dir, label)
     mkdirSync(dir, { recursive: true })
     const manifest: InstalledManifest = {
       ref: label,
@@ -137,7 +142,7 @@ export class VersionRegistry {
     if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
       throw new Error(`invalid npm version string: ${JSON.stringify(version)}`)
     }
-    const dir = join(this.versionsDir, version)
+    const dir = join(this.dir, version)
     if (existsSync(join(dir, MANIFEST_FILE))) {
       const existing = this.readManifest(version)
       if (existing) return this.toInfo(existing, existing)
@@ -181,12 +186,12 @@ export class VersionRegistry {
    * register like a local checkout. Heavy: run this as an async job.
    */
   private async installGitTag(ref: string): Promise<VersionInfo> {
-    const dir = join(this.versionsDir, ref)
+    const dir = join(this.dir, ref)
     if (this.readManifest(ref)) {
       const existing = this.readManifest(ref)
       if (existing) return this.toInfo(existing, existing)
     }
-    mkdirSync(this.versionsDir, { recursive: true })
+    mkdirSync(this.dir, { recursive: true })
     // blob:none keeps the initial clone small (trees/commits only); blobs are
     // fetched on checkout, which tolerates flaky networks better than one big
     // transfer. Retry once on failure.
@@ -228,7 +233,7 @@ export class VersionRegistry {
     return {
       ...process.env,
       // Isolated cache: the system ~/.npm cache can be broken or root-owned.
-      npm_config_cache: join(this.versionsDir, '.npm-cache'),
+      npm_config_cache: join(this.dir, '.npm-cache'),
       // Optional registry override (e.g. DSHM_NPM_REGISTRY=https://registry.npmmirror.com
       // for faster installs on China networks); falls back to the environment.
       ...(process.env.DSHM_NPM_REGISTRY ? { npm_config_registry: process.env.DSHM_NPM_REGISTRY } : {}),
@@ -239,7 +244,7 @@ export class VersionRegistry {
 
   private readManifest(ref: string): InstalledManifest | undefined {
     try {
-      const raw = readFileSync(join(this.versionsDir, ref, MANIFEST_FILE), 'utf8')
+      const raw = readFileSync(join(this.dir, ref, MANIFEST_FILE), 'utf8')
       return JSON.parse(raw) as InstalledManifest
     } catch {
       return undefined
@@ -253,7 +258,7 @@ export class VersionRegistry {
       ref: installed.ref,
       semver: installed.semver,
       installed: true,
-      installDir: join(this.versionsDir, installed.ref),
+      installDir: join(this.dir, installed.ref),
       installedAt: installed.installedAt,
       summary: installed.summary,
       launch: installed.launch,
@@ -261,9 +266,9 @@ export class VersionRegistry {
   }
 
   private scanInstalled(): InstalledManifest[] {
-    if (!existsSync(this.versionsDir)) return []
+    if (!existsSync(this.dir)) return []
     const out: InstalledManifest[] = []
-    for (const entry of readdirSync(this.versionsDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(this.dir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name === '.npm-cache') continue
       const manifest = this.readManifest(entry.name)
       if (manifest) out.push(manifest)

@@ -161,3 +161,17 @@ export function importEntity(path: string): Promise<EntityInfo> {
     body: JSON.stringify({ path }),
   })
 }
+
+export interface SettingsInfo { versionsDir: string }
+
+export function getSettings(): Promise<SettingsInfo> {
+  return request<SettingsInfo>('/settings')
+}
+
+export function updateSettings(versionsDir: string): Promise<{ versionsDir: string; moved: string[]; errors: string[] }> {
+  return request<{ versionsDir: string; moved: string[]; errors: string[] }>('/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ versionsDir }),
+  })
+}

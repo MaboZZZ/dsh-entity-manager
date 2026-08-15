@@ -99,6 +99,13 @@ const zh: Record<string, string> = {
   chooseExportDir: '选择导出目录',
   noDirChosen: '已取消（未选择目录）',
   langToggle: 'EN',
+  versionDataDir: '版本数据目录',
+  apply: '应用',
+  applyingBusy: '应用设置中',
+  applyDirHint: '选择存放已安装 DSH 版本的文件夹；切换时已装版本会自动迁移',
+  changedDir: '版本数据目录已更改',
+  movedVersions: '已迁移',
+  moveErrors: '迁移失败',
 }
 
 const en: Record<string, string> = {
@@ -192,6 +199,13 @@ const en: Record<string, string> = {
   chooseExportDir: 'Choose export directory',
   noDirChosen: 'cancelled (no directory chosen)',
   langToggle: '中',
+  versionDataDir: 'Version data directory',
+  apply: 'Apply',
+  applyingBusy: 'applying settings',
+  applyDirHint: 'Folder where installed DSH versions are stored; existing versions move automatically when changed',
+  changedDir: 'Version data directory updated',
+  movedVersions: 'migrated',
+  moveErrors: 'migration errors',
 }
 
 const dicts: Record<Lang, Record<string, string>> = { zh, en }
