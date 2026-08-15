@@ -2,17 +2,61 @@
   "name": "@dshm/shell",
   "version": "0.0.0",
   "private": true,
-  "description": "Electron shell hosting the DSH Entity Manager UI and per-entity webviews",
+  "description": "Electron shell hosting the DSH Entity Manager UI and per-entity GUI windows",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsc -p tsconfig.json && electron .",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "dev": "tsc -p tsconfig.build.json && node -e \"require('fs').copyFileSync('src/preload.cjs','dist/preload.cjs')\" && electron .",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').copyFileSync('src/preload.cjs','dist/preload.cjs')\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "pnpm build && electron-builder"
+  },
+  "dependencies": {
+    "@dshm/manager": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
     "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
     "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "ai.dshm.entity-manager",
+    "productName": "DSH Entity Manager",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "assets/**",
+      "package.json",
+      "!release/**",
+      "!node_modules/.cache/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../../apps/ui/dist",
+        "to": "ui-dist"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
   }
 }

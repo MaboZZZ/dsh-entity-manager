@@ -137,7 +137,14 @@ export class EntityProcessManager {
     ]
     const child = spawn(process.execPath, args, {
       cwd: launchCwd,
-      env: { ...process.env, DSH_HOME: homeDir, ...spec.env },
+      env: {
+        ...process.env,
+        DSH_HOME: homeDir,
+        // Under Electron (M4) process.execPath is the Electron binary; this
+        // flag makes it run as plain Node, which is what the dsh bin expects.
+        ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        ...spec.env,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     this.children.set(spec.id, child)

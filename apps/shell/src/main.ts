@@ -1,49 +1,155 @@
 /**
- * Electron main process skeleton.
+ * Electron main process (M4).
  *
- * Current shape: one BrowserWindow that loads the manager UI.
- *
- * M4 milestones tracked here:
- *  - spawn the manager daemon (or run it in-process) when the app starts
- *  - per-entity tabs rendered as webviews pointing at each entity's
- *    loopback URL, driven by the manager API
- *  - tray / auto-launch / packaging
+ * - Runs the manager daemon in-process (createManagerServer) on 127.0.0.1.
+ * - Main window hosts the manager UI (built ui/ in production, dev URL in dev).
+ * - Native menu + tray: toggle auto-launch, quit.
+ * - IPC: the renderer can ask to open an entity GUI in its own app window,
+ *   and report the manager URL so fetches do not depend on a proxy.
+ * - On quit, running entities are stopped so no orphan DSH processes remain.
  */
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { createManagerServer } from '@dshm/manager'
 
 const DEV_UI_URL = process.env.DSHM_DEV_UI_URL ?? 'http://127.0.0.1:5173'
-const isDev = Boolean(process.env.DSHM_DEV)
+const isDev = Boolean(process.env.DSHM_DEV) || !app.isPackaged
+
+let manager: ReturnType<typeof createManagerServer> | null = null
+let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let managerUrl = ''
+
+/** Start the in-process manager; prefer 4180, fall back to OS-assigned. */
+async function startManager(): Promise<string> {
+  const rootDir = process.env.DSHM_HOME ?? join(homedir(), '.dsh-entities')
+  const preferredPort = Number(process.env.DSHM_PORT ?? 4180)
+  let server = createManagerServer({ port: preferredPort, rootDir, version: app.getVersion() })
+  try {
+    const info = await server.start()
+    manager = server
+    console.log(`[shell] manager at ${info.url} (home: ${rootDir})`)
+    return info.url
+  } catch {
+    // port busy (e.g. a standalone manager is already running)
+    await server.stop().catch(() => {})
+    server = createManagerServer({ port: 0, rootDir, version: app.getVersion() })
+    const info = await server.start()
+    manager = server
+    console.log(`[shell] manager at ${info.url} (home: ${rootDir})`)
+    return info.url
+  }
+}
 
 function createWindow(): void {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+  mainWindow = new BrowserWindow({
+    width: 1360,
+    height: 880,
     title: 'DSH Entity Manager',
     webPreferences: {
-      preload: join(import.meta.dirname, 'preload.js'),
+      preload: join(import.meta.dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
-
-  // Open external links in the system browser, never inside the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://127.0.0.1:')) openEntityWindow(url)
     return { action: 'deny' }
   })
-
+  mainWindow.on('closed', () => { mainWindow = null })
   if (isDev) {
-    void win.loadURL(DEV_UI_URL)
+    void mainWindow.loadURL(DEV_UI_URL)
   } else {
-    void win.loadFile(join(import.meta.dirname, '../../ui/dist/index.html'))
+    // packaged: UI ships via extraResources (process.resourcesPath/ui-dist)
+    void mainWindow.loadFile(join(process.resourcesPath, 'ui-dist', 'index.html'))
   }
 }
 
-void app.whenReady().then(() => {
+/** Open an entity GUI (or any loopback URL) in its own app window. */
+function openEntityWindow(url: string): void {
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    title: `DSH — ${url}`,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  })
+  win.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (target.startsWith('http://127.0.0.1:')) openEntityWindow(target)
+    return { action: 'deny' }
+  })
+  void win.loadURL(url)
+}
+
+function buildMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+    {
+      label: 'Entity',
+      submenu: [
+        { label: 'Open manager', accelerator: 'CmdOrCtrl+1', click: () => mainWindow?.show() },
+        { label: 'Reload UI', accelerator: 'CmdOrCtrl+R', click: () => mainWindow?.webContents.reload() },
+        { type: 'separator' },
+        { label: 'Open at login', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => {
+          app.setLoginItemSettings({ openAtLogin: item.checked })
+        } },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+function createTray(): void {
+  const icon = nativeImage.createFromPath(join(import.meta.dirname, '../assets/tray.png'))
+  tray = new Tray(icon.resize({ width: 16, height: 16 }))
+  tray.setToolTip('DSH Entity Manager')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show manager', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    { label: 'Open entity GUI in window', click: () => openEntityWindow(managerUrl) },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.quit() } },
+  ]))
+  tray.on('click', () => { mainWindow?.show() })
+}
+
+async function stopEntities(): Promise<void> {
+  if (!manager) return
+  const running = manager.store.list().filter((e) => e.status.phase === 'running' || e.status.phase === 'starting')
+  for (const entity of running) {
+    try {
+      await manager.processes.stop(entity)
+    } catch {
+      // best effort on quit
+    }
+  }
+}
+
+void app.whenReady().then(async () => {
+  managerUrl = await startManager()
+  ipcMain.on('dshm:manager-url-sync', (event) => {
+    event.returnValue = managerUrl
+  })
+  ipcMain.handle('dshm:open-entity-window', (_event, url: string) => {
+    if (typeof url === 'string' && url.startsWith('http://127.0.0.1:')) openEntityWindow(url)
+  })
+  ipcMain.handle('dshm:open-manager', () => { mainWindow?.show(); mainWindow?.focus() })
+
   createWindow()
+  buildMenu()
+  createTray()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('before-quit', (event) => {
+  // give entities a moment to stop; do not block quit indefinitely
+  event.preventDefault()
+  void stopEntities().finally(() => {
+    app.exit(0)
   })
 })
 

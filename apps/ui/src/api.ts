@@ -9,7 +9,22 @@ import type {
   VersionInfo,
 } from '@dshm/shared'
 
-const BASE = '/api'
+declare global {
+  interface Window {
+    /** injected by the Electron preload bridge (M4); absent in a plain browser */
+    dshm?: {
+      managerUrl?: string
+      openEntityWindow?: (url: string) => Promise<unknown>
+      openManager?: () => Promise<unknown>
+    }
+  }
+}
+
+// In Electron the manager URL comes from the preload bridge; in a plain
+// browser dev session it is the vite dev proxy (/api -> manager).
+const BASE = window.dshm?.managerUrl ? `${window.dshm.managerUrl}/api` : '/api'
+
+export { BASE }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init)

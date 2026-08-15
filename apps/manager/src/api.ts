@@ -381,6 +381,17 @@ export function createManagerServer(options: ManagerServerOptions) {
     const method = req.method ?? 'GET'
     const url = new URL(req.url ?? '/', 'http://localhost')
     const path = url.pathname
+
+    // Loopback-only manager, but renderers may reach it cross-origin
+    // (Electron: file:// or the vite dev origin). Permit that; the server
+    // never binds outside 127.0.0.1.
+    res.setHeader('access-control-allow-origin', '*')
+    res.setHeader('access-control-allow-methods', 'GET,POST,PATCH,DELETE,OPTIONS')
+    res.setHeader('access-control-allow-headers', 'content-type')
+    if (method === 'OPTIONS') {
+      res.writeHead(204).end()
+      return
+    }
     for (const { match, handler } of compiled) {
       if (match.method !== method) continue
       const result = match.pattern.exec(path)

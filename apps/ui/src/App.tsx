@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EntityInfo, HealthInfo, JobInfo, SnapshotInfo, VersionInfo } from '@dshm/shared'
 import {
+  BASE,
   createEntity,
   createSnapshot,
   deleteEntity,
@@ -246,6 +247,7 @@ function DetailView(props: {
 
   const running = entity.status.phase === 'running'
   const port = entity.status.port
+  const openInAppWindow = window.dshm?.openEntityWindow
 
   return (
     <section className="panel detail">
@@ -296,7 +298,12 @@ function DetailView(props: {
             const result = await exportEntity(entity.spec.id)
             setExportPath(result.path)
           })}>export bundle</button>
-          <a href={`/api/exports/${exportPath?.split('/').pop() ?? ''}`} className={exportPath ? '' : 'hidden'} download>download bundle</a>
+          <a href={`${BASE}/exports/${exportPath?.split('/').pop() ?? ''}`} className={exportPath ? '' : 'hidden'} download>download bundle</a>
+          {port !== null && openInAppWindow && (
+            <button onClick={() => void openInAppWindow(`http://127.0.0.1:${port}/`)}>
+              open in app window
+            </button>
+          )}
         </div>
         {snapshots.length > 0 && (
           <ul className="snap-list">
