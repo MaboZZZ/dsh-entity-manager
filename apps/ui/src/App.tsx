@@ -523,17 +523,23 @@ function VersionsPanel(props: {
 
       {modal === 'local' && (
         <Modal title={t('addLocalTitle')} onClose={() => setModal(null)}>
-          <label>{t('label')}
-            <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" autoFocus />
-          </label>
-          <label>{t('localDir')}
-            <div className="dir-pick">
-              <code className="pick-value">{localPath || '…'}</code>
-              <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setLocalPath(d) })}>
-                {t('chooseDir')}
-              </button>
+          <div className="modal-row">
+            <span className="modal-row-label">{t('label')}</span>
+            <div className="modal-row-control">
+              <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" autoFocus />
             </div>
-          </label>
+          </div>
+          <div className="modal-row">
+            <span className="modal-row-label">{t('localDir')}</span>
+            <div className="modal-row-control">
+              <div className="dir-pick">
+                <code className="pick-value">{localPath || '…'}</code>
+                <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setLocalPath(d) })}>
+                  {t('chooseDir')}
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={() => setModal(null)}>{t('cancel')}</button>
             <button className="btn-primary" disabled={!localLabel.trim() || !localPath.trim()} onClick={registerLocalVersion}>{t('register')}</button>
@@ -543,14 +549,17 @@ function VersionsPanel(props: {
 
       {modal === 'dir' && (
         <Modal title={t('dataDirTitle')} onClose={() => setModal(null)}>
-          <label>{t('versionDataDir')}
-            <div className="dir-pick">
-              <code className="pick-value">{pendingDir ?? settingsDir ?? '…'}</code>
-              <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setPendingDir(d) })}>
-                {t('chooseDir')}
-              </button>
+          <div className="modal-row">
+            <span className="modal-row-label">{t('versionDataDir')}</span>
+            <div className="modal-row-control">
+              <div className="dir-pick">
+                <code className="pick-value">{pendingDir ?? settingsDir ?? '…'}</code>
+                <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setPendingDir(d) })}>
+                  {t('chooseDir')}
+                </button>
+              </div>
             </div>
-          </label>
+          </div>
           <span className="muted">{t('applyDirHint')}</span>
           <div className="modal-footer">
             <button className="btn-secondary" onClick={() => setModal(null)}>{t('cancel')}</button>

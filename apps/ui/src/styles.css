@@ -239,3 +239,9 @@ button.link:hover { color: var(--accent); }
   font-size: 12px; align-items: flex-start;
 }
 .version-status { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+/* single-line two-sided rows inside modals */
+.modal-row { display: flex; align-items: center; gap: 14px; }
+.modal-row-label { flex-shrink: 0; font-size: 13px; color: var(--muted); font-weight: 500; }
+.modal-row-control { flex: 1; min-width: 0; display: flex; justify-content: flex-end; }
+.modal-row-control input { width: 100%; }
+.modal-row-control .dir-pick { width: 100%; }
