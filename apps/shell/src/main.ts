@@ -8,7 +8,7 @@
  *   and report the manager URL so fetches do not depend on a proxy.
  * - On quit, running entities are stopped so no orphan DSH processes remain.
  */
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createManagerServer } from '@dshm/manager'
@@ -116,14 +116,22 @@ function createTray(): void {
 
 async function stopEntities(): Promise<void> {
   if (!manager) return
-  const running = manager.store.list().filter((e) => e.status.phase === 'running' || e.status.phase === 'starting')
-  for (const entity of running) {
-    try {
-      await manager.processes.stop(entity)
-    } catch {
-      // best effort on quit
+  await manager.processes.stopAll()
+}
+
+// Single-instance lock: two app instances sharing one DSH home would clobber
+// each other's entities.json ("entity disappeared from the store").
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
     }
-  }
+  })
 }
 
 void app.whenReady().then(async () => {
@@ -135,6 +143,21 @@ void app.whenReady().then(async () => {
     if (typeof url === 'string' && url.startsWith('http://127.0.0.1:')) openEntityWindow(url)
   })
   ipcMain.handle('dshm:open-manager', () => { mainWindow?.show(); mainWindow?.focus() })
+  ipcMain.handle('dshm:pick-directory', async (_event, title?: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: title ?? 'Choose directory',
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null
+  })
+  ipcMain.handle('dshm:pick-file', async (_event, title?: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: title ?? 'Choose file',
+      filters: [{ name: 'Entity bundle', extensions: ['gz', 'zip'] }],
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null
+  })
 
   createWindow()
   buildMenu()
@@ -146,13 +169,19 @@ void app.whenReady().then(async () => {
 })
 
 app.on('before-quit', (event) => {
-  // give entities a moment to stop; do not block quit indefinitely
+  // Close every entity instance (running, starting, or merely alive) so no
+  // DSH process/container survives the app closing. Timeout guards the quit.
   event.preventDefault()
+  const quit = () => app.exit(0)
+  const timer = setTimeout(quit, 30_000)
   void stopEntities().finally(() => {
-    app.exit(0)
+    clearTimeout(timer)
+    quit()
   })
 })
 
+// Closing the last window fully quits the app on every platform, which then
+// stops all entity instances (before-quit above).
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })

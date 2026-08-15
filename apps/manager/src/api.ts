@@ -32,6 +32,7 @@ import type {
 import { JobRunner } from './jobs.ts'
 import { EntityStore } from './store.ts'
 import { SnapshotManager } from './snapshots.ts'
+import { SettingsStore } from './settings.ts'
 import { EntityProcessManager } from './spawn.ts'
 import { NotImplemented, VersionRegistry } from './versions.ts'
 
@@ -114,7 +115,8 @@ function entityOr404(
 
 export function createManagerServer(options: ManagerServerOptions) {
   const store = new EntityStore(options.rootDir)
-  const versions = new VersionRegistry(join(options.rootDir, 'versions'))
+  const settings = new SettingsStore(options.rootDir)
+  const versions = new VersionRegistry(() => settings.versionsDir)
   const snapshots = new SnapshotManager(options.rootDir)
   const jobs = new JobRunner()
   const processes = new EntityProcessManager(
@@ -125,22 +127,40 @@ export function createManagerServer(options: ManagerServerOptions) {
   )
   const startedAt = Date.now()
 
-  processes.reconcile()
+  void processes.reconcile()
 
   const routes = new Map<string, Handler>()
 
-  routes.set('GET /api/health', (_req, res) => {
+  routes.set('GET /api/health', async (_req, res) => {
     const body: HealthInfo = {
       ok: true,
       version: options.version,
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
       entities: store.list().length,
+      docker: await processes.checkDocker(),
     }
     sendJson(res, 200, body)
   })
 
   routes.set('GET /api/entities', (_req, res) => {
     sendJson(res, 200, store.list())
+  })
+
+  routes.set('GET /api/settings', (_req, res) => {
+    sendJson(res, 200, { versionsDir: settings.versionsDir })
+  })
+
+  routes.set('PUT /api/settings', async (req, res) => {
+    const raw = (await readJson(req)) as { versionsDir?: string } | undefined
+    if (!raw || typeof raw.versionsDir !== 'string' || raw.versionsDir.trim() === '') {
+      return sendError(res, 400, 'versionsDir is required')
+    }
+    try {
+      const result = settings.setVersionsDir(raw.versionsDir)
+      sendJson(res, 200, result)
+    } catch (error) {
+      return sendError(res, 400, error instanceof Error ? error.message : String(error))
+    }
   })
 
   routes.set('POST /api/entities', async (req, res) => {
@@ -244,12 +264,12 @@ export function createManagerServer(options: ManagerServerOptions) {
     sendJson(res, 200, updated)
   })
 
-  routes.set('GET /api/entities/{id}/logs', (_req, res, params) => {
+  routes.set('GET /api/entities/{id}/logs', async (_req, res, params) => {
     const info = entityOr404(res, store, params.id)
     if (!info) return
     const url = new URL(_req.url ?? '/', 'http://localhost')
     const lines = Math.max(1, Math.min(5000, Number(url.searchParams.get('lines') ?? 200) || 200))
-    sendJson(res, 200, { id: info.spec.id, logs: processes.getLogs(info.spec.id, lines) })
+    sendJson(res, 200, { id: info.spec.id, logs: await processes.getLogs(info.spec.id, lines) })
   })
 
   routes.set('POST /api/entities/{id}/snapshot', async (_req, res, params) => {
@@ -299,6 +319,34 @@ export function createManagerServer(options: ManagerServerOptions) {
     }
   })
 
+  routes.set('POST /api/entities/{id}/export', async (req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const raw = (await readJson(req)) as { dir?: string } | undefined
+    if (!raw || typeof raw.dir !== 'string' || raw.dir === '') {
+      return sendError(res, 400, 'dir is required')
+    }
+    try {
+      const result = await snapshots.exportTo(info, raw.dir)
+      sendJson(res, 200, result)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('POST /api/entities/export-all', async (req, res) => {
+    const raw = (await readJson(req)) as { dir?: string } | undefined
+    if (!raw || typeof raw.dir !== 'string' || raw.dir === '') {
+      return sendError(res, 400, 'dir is required')
+    }
+    try {
+      const result = await snapshots.exportAll(store.list(), raw.dir)
+      sendJson(res, 200, { exported: result })
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
   routes.set('POST /api/entities/import', async (req, res) => {
     const raw = (await readJson(req)) as Partial<ImportRequest> | undefined
     if (!raw || typeof raw.path !== 'string' || raw.path === '') {
@@ -342,6 +390,7 @@ export function createManagerServer(options: ManagerServerOptions) {
         'version-install',
         `install ${source} ${ref}`,
         () => versions.install(source!, ref),
+        ref,
       )
       sendJson(res, 202, job)
     } catch (error) {

@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@dshm/shared": "workspace:*"
+    "@dshm/shared": "workspace:*",
+    "@deepseek-ai/node-addon-landlock-run": "^0.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

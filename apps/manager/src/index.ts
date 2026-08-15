@@ -17,6 +17,12 @@ const manager = createManagerServer({ port: PORT, rootDir: ROOT_DIR, version: VE
 
 const shutdown = async (signal: string): Promise<void> => {
   console.log(`[dshm] ${signal}: shutting down`)
+  // Stop every entity instance first so no DSH process/container survives.
+  try {
+    await manager.processes.stopAll()
+  } catch (error) {
+    console.error('[dshm] error stopping entities:', error)
+  }
   await manager.stop()
   process.exit(0)
 }

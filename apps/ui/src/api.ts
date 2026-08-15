@@ -16,6 +16,8 @@ declare global {
       managerUrl?: string
       openEntityWindow?: (url: string) => Promise<unknown>
       openManager?: () => Promise<unknown>
+      pickDirectory?: (title?: string) => Promise<string | null>
+      pickFile?: (title?: string) => Promise<string | null>
     }
   }
 }
@@ -130,10 +132,54 @@ export function exportEntity(id: string): Promise<ExportResult> {
   return request<ExportResult>(`/entities/${id}/export`)
 }
 
+export function exportEntityTo(id: string, dir: string): Promise<ExportResult> {
+  return request<ExportResult>(`/entities/${id}/export`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+}
+
+export function exportAllEntities(dir: string): Promise<{ exported: Array<{ id: string; path: string; sizeBytes: number }> }> {
+  return request<{ exported: Array<{ id: string; path: string; sizeBytes: number }> }>('/entities/export-all', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+}
+
+/** Native directory picker (Electron); prompt fallback in a plain browser. */
+export async function pickDirectory(title?: string): Promise<string | null> {
+  if (window.dshm?.pickDirectory) return window.dshm.pickDirectory(title)
+  const picked = window.prompt('Directory path (browser mode):')
+  return picked && picked.trim() ? picked.trim() : null
+}
+
+/** Native file picker (Electron); prompt fallback in a plain browser. */
+export async function pickFile(title?: string): Promise<string | null> {
+  if (window.dshm?.pickFile) return window.dshm.pickFile(title)
+  const picked = window.prompt('File path (browser mode):')
+  return picked && picked.trim() ? picked.trim() : null
+}
+
 export function importEntity(path: string): Promise<EntityInfo> {
   return request<EntityInfo>('/entities/import', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path }),
+  })
+}
+
+export interface SettingsInfo { versionsDir: string }
+
+export function getSettings(): Promise<SettingsInfo> {
+  return request<SettingsInfo>('/settings')
+}
+
+export function updateSettings(versionsDir: string): Promise<{ versionsDir: string; moved: string[]; errors: string[] }> {
+  return request<{ versionsDir: string; moved: string[]; errors: string[] }>('/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ versionsDir }),
   })
 }

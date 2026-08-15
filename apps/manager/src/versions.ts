@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { VersionInfo, VersionLaunch, VersionSourceKind } from '@dshm/shared'
+import { resolveNpm } from './npm.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -48,8 +49,13 @@ interface InstalledManifest {
 }
 
 export class VersionRegistry {
-  constructor(readonly versionsDir: string) {
-    mkdirSync(versionsDir, { recursive: true })
+  /** Directory is dynamic: the user can re-point it via settings. */
+  private get dir(): string {
+    return this.getDir()
+  }
+
+  constructor(private readonly getDir: () => string) {
+    mkdirSync(getDir(), { recursive: true })
   }
 
   async list(): Promise<VersionInfo[]> {
@@ -59,15 +65,16 @@ export class VersionRegistry {
     // npm source: live registry view with an isolated cache.
     let npmVersions: string[] = []
     try {
+      const npm = await resolveNpm()
       const { stdout } = await execFileAsync(
-        'npm',
-        ['view', DSH_PACKAGE, 'versions', '--json'],
+        npm.cmd,
+        [...npm.prefix, 'view', DSH_PACKAGE, 'versions', '--json'],
         { env: this.npmEnv() },
       )
       const parsed = JSON.parse(stdout) as unknown
       if (Array.isArray(parsed)) npmVersions = parsed.filter((v): v is string => typeof v === 'string')
     } catch {
-      // registry unreachable: fall back to installed-only
+      // registry unreachable or npm CLI missing: fall back to installed-only
     }
 
     const out: VersionInfo[] = []
@@ -103,7 +110,7 @@ export class VersionRegistry {
     if (!existsSync(tsx)) {
       throw new Error(`checkout has no tsx dependency at ${tsx}; run pnpm install in the checkout first`)
     }
-    const dir = join(this.versionsDir, label)
+    const dir = join(this.dir, label)
     mkdirSync(dir, { recursive: true })
     const manifest: InstalledManifest = {
       ref: label,
@@ -125,9 +132,32 @@ export class VersionRegistry {
    * Read from disk each time so a version installed after the manager boot
    * is immediately usable.
    */
+  /**
+   * Resolve a pin to launch info, or throw VersionNotInstalled.
+   * For npm / git-tag versions the launch paths are derived from the CURRENT
+   * version directory (manifests may carry stale absolute paths after a
+   * version-directory migration); local checkouts use their stored absolute
+   * paths (they live outside the version store).
+   */
   resolve(pin: { source: VersionSourceKind; ref: string }): VersionLaunch {
     const manifest = this.readManifest(pin.ref)
     if (!manifest || manifest.source !== pin.source) throw new VersionNotInstalled(pin.ref)
+    const dir = join(this.dir, pin.ref)
+    if (pin.source === 'npm') {
+      return {
+        nodeArgs: [],
+        script: join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+        cwd: dir,
+      }
+    }
+    if (pin.source === 'git-tag') {
+      return {
+        nodeArgs: ['--import', 'tsx/esm'],
+        script: join(dir, 'apps', 'cli', 'src', 'bin.ts'),
+        cwd: dir,
+      }
+    }
+    // local checkout: stored absolute paths (validated at registration)
     return manifest.launch
   }
 
@@ -135,7 +165,7 @@ export class VersionRegistry {
     if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
       throw new Error(`invalid npm version string: ${JSON.stringify(version)}`)
     }
-    const dir = join(this.versionsDir, version)
+    const dir = join(this.dir, version)
     if (existsSync(join(dir, MANIFEST_FILE))) {
       const existing = this.readManifest(version)
       if (existing) return this.toInfo(existing, existing)
@@ -152,7 +182,8 @@ export class VersionRegistry {
       'utf8',
     )
     // --ignore-scripts: never run install scripts from the registry.
-    await execFileAsync('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
+    const npm = await resolveNpm()
+    await execFileAsync(npm.cmd, [...npm.prefix, 'install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
       cwd: dir,
       env: this.npmEnv(),
     })
@@ -178,12 +209,12 @@ export class VersionRegistry {
    * register like a local checkout. Heavy: run this as an async job.
    */
   private async installGitTag(ref: string): Promise<VersionInfo> {
-    const dir = join(this.versionsDir, ref)
+    const dir = join(this.dir, ref)
     if (this.readManifest(ref)) {
       const existing = this.readManifest(ref)
       if (existing) return this.toInfo(existing, existing)
     }
-    mkdirSync(this.versionsDir, { recursive: true })
+    mkdirSync(this.dir, { recursive: true })
     // blob:none keeps the initial clone small (trees/commits only); blobs are
     // fetched on checkout, which tolerates flaky networks better than one big
     // transfer. Retry once on failure.
@@ -225,16 +256,18 @@ export class VersionRegistry {
     return {
       ...process.env,
       // Isolated cache: the system ~/.npm cache can be broken or root-owned.
-      npm_config_cache: join(this.versionsDir, '.npm-cache'),
+      npm_config_cache: join(this.dir, '.npm-cache'),
       // Optional registry override (e.g. DSHM_NPM_REGISTRY=https://registry.npmmirror.com
       // for faster installs on China networks); falls back to the environment.
       ...(process.env.DSHM_NPM_REGISTRY ? { npm_config_registry: process.env.DSHM_NPM_REGISTRY } : {}),
+      // Under Electron (M4), node invocations must run the binary as plain Node.
+      ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     }
   }
 
   private readManifest(ref: string): InstalledManifest | undefined {
     try {
-      const raw = readFileSync(join(this.versionsDir, ref, MANIFEST_FILE), 'utf8')
+      const raw = readFileSync(join(this.dir, ref, MANIFEST_FILE), 'utf8')
       return JSON.parse(raw) as InstalledManifest
     } catch {
       return undefined
@@ -248,7 +281,7 @@ export class VersionRegistry {
       ref: installed.ref,
       semver: installed.semver,
       installed: true,
-      installDir: join(this.versionsDir, installed.ref),
+      installDir: join(this.dir, installed.ref),
       installedAt: installed.installedAt,
       summary: installed.summary,
       launch: installed.launch,
@@ -256,9 +289,9 @@ export class VersionRegistry {
   }
 
   private scanInstalled(): InstalledManifest[] {
-    if (!existsSync(this.versionsDir)) return []
+    if (!existsSync(this.dir)) return []
     const out: InstalledManifest[] = []
-    for (const entry of readdirSync(this.versionsDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(this.dir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name === '.npm-cache') continue
       const manifest = this.readManifest(entry.name)
       if (manifest) out.push(manifest)

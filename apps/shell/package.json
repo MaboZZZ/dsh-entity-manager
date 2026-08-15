@@ -26,7 +26,7 @@
     "electronVersion": "37.10.3",
     "asar": true,
     "directories": {
-      "output": "release"
+      "output": "../../release"
     },
     "files": [
       "dist/**",
