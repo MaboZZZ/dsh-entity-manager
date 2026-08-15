@@ -1,139 +1,186 @@
 # DSH Entity Manager
 
-> 可视化地管理多个**相互独立的 DSH（DeepSeek Harness）实体**：每个实体可以锁定
-> **不同的 DSH 版本**（npm 发布版 / git ref / 本地源码），一键创建、启动、停止、
-> 切换版本、快照回滚、导入导出——装在一个本地桌面应用里。
+> Manage multiple **independent DSH (DeepSeek Harness) entities** from one desktop
+> app. Each entity pins its **own DSH version** (npm release / git ref / local
+> checkout) with an isolated `$DSH_HOME` and port — create, start, stop, switch
+> versions, snapshot & rollback, export & import, all from a visual UI.
 
 ![CI](https://img.shields.io/github/actions/workflow/status/mabozzz/dsh-entity-manager/ci.yml?branch=main)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
-**零侵入**：不修改 DSH 一行代码。基于 DSH 的公开机制编排：每个实体 =
-一个独立 `$DSH_HOME`（数据根）+ 独立端口 + 独立 DSH 版本。
+**Zero-intrusion**: not a single line of DSH is modified. It orchestrates DSH's
+own public mechanisms — one entity = one `$DSH_HOME` (data root) + one port +
+one pinned DSH version.
 
 ---
 
-## 功能
+## Features
 
-| 能力 | 说明 |
+| Capability | Description |
 |---|---|
-| 🧩 多版本并行 | 不同实体可同时跑不同 DSH 版本（npm / git-tag / 本地源码），互不干扰 |
-| 🖥 可视化 | 实体看板、创建向导、实体详情页内嵌该实体的 Web GUI + 实时日志 |
-| 🔄 版本切换 | 一个实体随时切换版本并自动重启，数据目录保留；切换前可快照，一键回滚 |
-| 📦 快照 / 迁移 | 实体导出为 bundle 文件，可导入为全新实体（新 id + 新数据目录） |
-| 🔒 数据隔离 | 每个实体独立 `$DSH_HOME`，密钥 / 会话 / 配置天然隔离 |
-| ⚡ 桌面应用 | Electron 壳内嵌管理器；托盘、菜单、开机自启；退出时自动停止所有实体 |
+| 🧩 Multi-version parallel | Entities run different DSH versions side by side (npm / git-tag / local source), fully isolated |
+| 🖥 Visual | Entity dashboard, create wizard, detail view with the entity's own Web GUI embedded + live logs |
+| 🔄 Version switching | Switch an entity's version with one click and auto-restart; data directory untouched; snapshot before switching, roll back anytime |
+| 📦 Snapshot / migration | Export an entity as a bundle file; import it as a brand-new entity (new id + new data home) |
+| 🔒 Data isolation | Each entity has its own `$DSH_HOME` — keys, sessions, config are natively isolated |
+| ⚡ Desktop app | Electron shell with an in-process manager; tray, menu, open-at-login; stops all entities on quit |
 
-## 架构
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│  apps/ui（React）  看板 · 向导 · 详情 · 版本管理 │
+│  apps/ui (React)  dashboard · wizard · detail│
 └──────────────────┬──────────────────────────┘
-                   │ localhost JSON API
+                   │ loopback JSON API
 ┌──────────────────▼──────────────────────────┐
-│  apps/manager（Node 守护进程）                 │
-│  实体 CRUD · 进程拉起/停止 · 健康探测 · 版本仓库  │
-│  快照/回滚 · 导入/导出 · 异步安装任务            │
+│  apps/manager (Node daemon)                  │
+│  entity CRUD · spawn/stop · health probe     │
+│  version store · snapshots · import/export   │
 └───┬──────────────────────┬──────────────────┘
-    │ spawn (DSH_HOME=…)   │ 安装/扫描
+    │ spawn (DSH_HOME=…)   │ install/scan
 ┌───▼──────────┐   ┌───────▼────────┐
-│ 实体 A (v1)   │   │ 版本仓库         │
-│ 实体 B (v2)   │   │ versions/      │
+│ entity A (v1) │   │ version store   │
+│ entity B (v2) │   │ versions/       │
 └──────────────┘   └────────────────┘
 ```
 
-- **apps/manager** — 管理器守护进程（Node + TS），loopback JSON API；
-  实体 = `node <dsh bin> --profile web --port <n>` + `DSH_HOME=<实体目录>`。
-- **apps/ui** — 可视化界面（Vite + React），3 秒轮询状态，iframe 内嵌实体 GUI。
-- **apps/shell** — Electron 壳：内嵌管理器、preload 桥、托盘/菜单、开机自启；
-  实体进程以 `ELECTRON_RUN_AS_NODE` 用 Electron 自带 Node 拉起。
-- **packages/shared** — 三端共享契约类型。
+- **apps/manager** — manager daemon (Node + TS), loopback JSON API. An entity is
+  spawned as `node <dsh bin> --profile web --port <n>` with
+  `DSH_HOME=<entity dir>`.
+- **apps/ui** — the visual interface (Vite + React), 3s polling, embedded entity GUI via iframe.
+- **apps/shell** — Electron shell: in-process manager, preload bridge, tray/menu,
+  open-at-login; entity processes run via `ELECTRON_RUN_AS_NODE` on Electron's
+  bundled Node (22.21, satisfies DSH's ≥22.19 requirement).
+- **packages/shared** — contracts shared by all three.
 
-## 快速开始
+## Quick start
 
-要求：Node ≥ 22.19（DSH 运行时要求；桌面版自带 Node 22.21，无此限制）、pnpm ≥ 9。
+Requirements: Node ≥ 22.19 (only for the daemon/UI dev; the packaged desktop app
+ships its own Node), pnpm ≥ 9.
 
 ```bash
 pnpm install
 
-# 终端 1：管理器守护进程（默认 http://127.0.0.1:4180，数据在 ~/.dsh-entities）
+# terminal 1: manager daemon (http://127.0.0.1:4180, data in ~/.dsh-entities)
 pnpm dev:manager
 
-# 终端 2：可视化界面（http://127.0.0.1:5173，/api 代理到管理器）
+# terminal 2: UI (http://127.0.0.1:5173, /api proxied to the manager)
 pnpm dev:ui
 ```
 
-桌面应用（Electron）：
+Desktop app (Electron):
 
 ```bash
 pnpm --filter @dshm/manager build
 pnpm --filter @dshm/ui build
-pnpm --filter @dshm/shell dev          # 开发模式
-pnpm --filter @dshm/shell package      # 打包（mac dmg/zip、win nsis、linux AppImage）
+pnpm --filter @dshm/shell dev          # development
+pnpm --filter @dshm/shell package      # package (mac dmg/zip, win nsis, linux AppImage)
 ```
 
-### 冒烟验证
+### Smoke test
 
 ```bash
 curl http://127.0.0.1:4180/api/health
-curl http://127.0.0.1:4180/api/versions          # 列出 npm 上全部 DSH 版本
+curl http://127.0.0.1:4180/api/versions          # all DSH versions on npm
 curl -X POST http://127.0.0.1:4180/api/entities \
   -H 'content-type: application/json' \
   -d '{"name":"sandbox","version":{"source":"npm","ref":"0.1.0-rc.6"}}'
-./scripts/verify-m0.sh                            # 双版本独立性回归（11 项检查）
+./scripts/verify-m0.sh                            # dual-version independence regression (11 checks)
 ```
 
-## API 一览（loopback 127.0.0.1:4180）
+## API (loopback 127.0.0.1:4180)
 
 ```
-GET    /api/health                    健康状态
-GET    /api/entities                  实体列表
-POST   /api/entities                  创建实体
-GET    /api/entities/{id}             实体详情
-PATCH  /api/entities/{id}             改配置 / 切版本（可自动重启）
-DELETE /api/entities/{id}             删除
-POST   /api/entities/{id}/start|stop  启动 / 停止
-GET    /api/entities/{id}/logs        日志（?lines=N）
-POST   /api/entities/{id}/snapshot    快照（spec + home 打包）
-GET    /api/entities/{id}/snapshots   快照列表
-POST   /api/entities/{id}/restore     回滚到某快照
-GET    /api/entities/{id}/export      导出 bundle
-POST   /api/entities/import           从 bundle 导入
-GET    /api/versions                  版本列表（npm 实时 + 已安装）
-POST   /api/versions/install          安装版本（异步任务，返回 job id）
-POST   /api/versions/register-local   注册本地 checkout
-GET    /api/jobs                      异步任务列表
+GET    /api/health                     health
+GET    /api/entities                   list entities
+POST   /api/entities                   create entity
+GET    /api/entities/{id}              entity detail
+PATCH  /api/entities/{id}              update config / switch version (optional auto-restart)
+DELETE /api/entities/{id}              delete
+POST   /api/entities/{id}/start|stop   start / stop
+GET    /api/entities/{id}/logs         logs (?lines=N)
+POST   /api/entities/{id}/snapshot     snapshot (spec + home tarball)
+GET    /api/entities/{id}/snapshots    list snapshots
+POST   /api/entities/{id}/restore      restore a snapshot
+GET    /api/entities/{id}/export       export bundle
+POST   /api/entities/import            import a bundle
+GET    /api/versions                   versions (live npm + installed)
+POST   /api/versions/install           install a version (async job)
+POST   /api/versions/register-local    register a local checkout
+GET    /api/jobs                       async jobs
 ```
 
-## 环境变量
+## Environment variables
 
-| 变量 | 用途 | 默认 |
+| Variable | Purpose | Default |
 |---|---|---|
-| `DSHM_PORT` | 管理器端口 | `4180` |
-| `DSHM_HOME` | 管理器数据根（实体 homes / 版本仓库 / 快照 / 导出） | `~/.dsh-entities` |
-| `DSHM_GIT_PROXY` | git-tag 源克隆用的代理（如 `http://127.0.0.1:7897`） | 无 |
-| `DSHM_DEV_UI_URL` | Electron 开发模式 UI 地址 | `http://127.0.0.1:5173` |
+| `DSHM_PORT` | manager port | `4180` |
+| `DSHM_HOME` | manager data root (entity homes / version store / snapshots / exports) | `~/.dsh-entities` |
+| `DSHM_GIT_PROXY` | proxy for git-tag cloning (e.g. `http://127.0.0.1:7897`) | none |
+| `DSHM_DEV_UI_URL` | Electron dev-mode UI URL | `http://127.0.0.1:5173` |
 
-> 国内网络提示：npm 安装慢可设 `npm_config_registry=https://registry.npmmirror.com`；
-> 从 GitHub 克隆 DSH 不稳定可设 `DSHM_GIT_PROXY` 指向本地代理。
+> Network tips (China): set `npm_config_registry=https://registry.npmmirror.com`
+> for faster npm installs; set `DSHM_GIT_PROXY` to a local proxy if GitHub
+> cloning is unstable.
 
-## 设计文档
+## Design docs
 
-详见 [docs/plan.md](./docs/plan.md)：实体模型、隔离级别、版本切换与升级安全、
-M0–M4 实测记录（含踩坑）。
+See [docs/plan.md](./docs/plan.md) (in Chinese): entity model, isolation levels,
+version switching & upgrade safety, M0–M4 implementation notes.
 
-## 路线图
+## Roadmap
 
-- [x] M0 实体真实拉起，双版本并行验证
-- [x] M1 创建向导 / 实体详情 / 异步安装 / 版本切换
-- [x] M2 快照 / 回滚 / 导出导入
-- [x] M3 版本管理与 git-tag 源
-- [x] M4 Electron 桌面壳 + 打包
-- [ ] L2/L3 隔离（landlock 沙箱 / Docker 容器后端）
-- [ ] 状态推送（SSE）替代轮询
-- [ ] CI 产物分发（GitHub Release 附打包产物）
+- [x] M0 real entity lifecycle, dual-version parallel verification
+- [x] M1 create wizard / entity detail / async install / version switching
+- [x] M2 snapshots / rollback / export-import
+- [x] M3 version management + git-tag source
+- [x] M4 Electron shell + packaging
+- [ ] L2/L3 isolation (landlock sandbox / Docker backend)
+- [ ] Server-sent events instead of polling
+- [ ] CI release artifacts (attach packages to GitHub Releases)
 
 ## License
 
 [MIT](./LICENSE)
+
+---
+
+# 中文说明
+
+## 这是什么
+
+**DSH Entity Manager**：在一个可视化桌面应用里管理多个相互独立的
+**DSH（DeepSeek Harness）实体**。每个实体锁定**不同的 DSH 版本**
+（npm 发布版 / git ref / 本地源码），拥有独立的 `$DSH_HOME` 和端口——
+创建、启动、停止、切换版本、快照回滚、导入导出，全可视化操作。
+
+**零侵入**：不改 DSH 一行代码，纯基于 DSH 公开机制编排。
+
+## 功能
+
+- **多版本并行**：不同实体可同时跑不同 DSH 版本，互不干扰
+- **可视化**：实体看板、创建向导、详情页内嵌该实体的 Web GUI + 实时日志
+- **版本切换**：一键切换版本自动重启，数据保留；切换前快照、随时回滚
+- **快照 / 迁移**：实体导出为 bundle，可导入为全新实体
+- **数据隔离**：独立 `$DSH_HOME`，密钥 / 会话 / 配置天然隔离
+- **桌面应用**：Electron 壳内嵌管理器，托盘 / 菜单 / 开机自启，退出时停止全部实体
+
+## 快速开始
+
+```bash
+pnpm install
+pnpm dev:manager   # 管理器（http://127.0.0.1:4180）
+pnpm dev:ui        # 界面（http://127.0.0.1:5173）
+```
+
+桌面版：`pnpm --filter @dshm/manager build && pnpm --filter @dshm/ui build && pnpm --filter @dshm/shell dev`
+
+## 国内网络提示
+
+- npm 安装慢：`npm_config_registry=https://registry.npmmirror.com`
+- 从 GitHub 克隆不稳定：`DSHM_GIT_PROXY=http://127.0.0.1:7897`（指向你的本地代理）
+
+## 设计文档
+
+详见 [docs/plan.md](./docs/plan.md)：实体模型、隔离级别、版本切换与升级安全、M0–M4 实测记录（含踩坑）。
