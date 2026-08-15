@@ -54,6 +54,8 @@ export interface EntityStatus {
   error: string | null
   /** the pin the process was last started with */
   version: VersionPin | null
+  /** container id when isolation is 'container' (L3) */
+  containerId: string | null
 }
 
 export interface EntityInfo {
@@ -170,4 +172,6 @@ export interface HealthInfo {
   version: string
   uptimeSeconds: number
   entities: number
+  /** whether the Docker daemon is reachable (L3 container isolation) */
+  docker: boolean
 }

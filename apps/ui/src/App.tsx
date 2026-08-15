@@ -142,6 +142,7 @@ function CreateWizard(props: {
   const [name, setName] = useState('')
   const [ref, setRef] = useState('')
   const [profile, setProfile] = useState('web')
+  const [isolation, setIsolation] = useState('process')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
 
@@ -156,6 +157,7 @@ function CreateWizard(props: {
         version: { source: 'npm', ref },
         profile,
         port: 0,
+        isolation: isolation as 'process' | 'sandbox' | 'container',
         env: {
           ...(apiKey.trim() ? { DEEPSEEK_API_KEY: apiKey.trim() } : {}),
           ...(baseUrl.trim() ? { DEEPSEEK_BASE_URL: baseUrl.trim() } : {}),
@@ -191,8 +193,14 @@ function CreateWizard(props: {
           </label>
           <label>Profile
             <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-              <option value="web">web (browser GUI)</option>
-              <option value="headless">headless</option>
+              <option value="web">web (browser GUI)</option>              <option value="headless">headless</option>
+            </select>
+          </label>
+          <label>Isolation
+            <select value={isolation} onChange={(e) => setIsolation(e.target.value)}>
+              <option value="process">process (default)</option>
+              <option value="sandbox">sandbox (landlock, Linux only)</option>
+              <option value="container">container (Docker)</option>
             </select>
           </label>
           <label>DeepSeek API key <span className="muted">(optional — also configurable inside the entity)</span>

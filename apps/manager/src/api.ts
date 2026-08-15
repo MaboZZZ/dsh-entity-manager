@@ -125,16 +125,17 @@ export function createManagerServer(options: ManagerServerOptions) {
   )
   const startedAt = Date.now()
 
-  processes.reconcile()
+  void processes.reconcile()
 
   const routes = new Map<string, Handler>()
 
-  routes.set('GET /api/health', (_req, res) => {
+  routes.set('GET /api/health', async (_req, res) => {
     const body: HealthInfo = {
       ok: true,
       version: options.version,
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
       entities: store.list().length,
+      docker: await processes.checkDocker(),
     }
     sendJson(res, 200, body)
   })
@@ -244,12 +245,12 @@ export function createManagerServer(options: ManagerServerOptions) {
     sendJson(res, 200, updated)
   })
 
-  routes.set('GET /api/entities/{id}/logs', (_req, res, params) => {
+  routes.set('GET /api/entities/{id}/logs', async (_req, res, params) => {
     const info = entityOr404(res, store, params.id)
     if (!info) return
     const url = new URL(_req.url ?? '/', 'http://localhost')
     const lines = Math.max(1, Math.min(5000, Number(url.searchParams.get('lines') ?? 200) || 200))
-    sendJson(res, 200, { id: info.spec.id, logs: processes.getLogs(info.spec.id, lines) })
+    sendJson(res, 200, { id: info.spec.id, logs: await processes.getLogs(info.spec.id, lines) })
   })
 
   routes.set('POST /api/entities/{id}/snapshot', async (_req, res, params) => {

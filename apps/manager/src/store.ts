@@ -24,6 +24,7 @@ function freshStatus(): EntityStatus {
     startedAt: null,
     error: null,
     version: null,
+    containerId: null,
   }
 }
 

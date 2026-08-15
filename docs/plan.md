@@ -90,9 +90,25 @@
 
 | 级别 | 说明 | 状态 |
 |---|---|---|
-| L1 process | 独立 `$DSH_HOME` + 端口 + 版本 pin（默认） | M0 实现 |
-| L2 sandbox | Linux landlock 白名单（复用 DSH 自带沙箱） | 预留 |
-| L3 container | 每版本 Docker 镜像，容器拉起 | 预留 |
+| L1 process | 独立 `$DSH_HOME` + 端口 + 版本 pin（默认） | ✅ M0 |
+| L2 sandbox | Linux landlock 白名单（复用 DSH 自带 `landlock-run`：只读 `/`，可写仅实体 home + 日志；`@deepseek-ai/node-addon-landlock-run` 包） | ✅ v0.1（Linux 生效，macOS 报清晰错误） |
+| L3 container | 每版本 Docker 镜像（含原生模块编译），`docker run` + 透明 TCP 代理 + 端口映射拉起 | ✅ v0.1（macOS Docker Desktop + Linux 实测通过） |
+
+### L2/L3 实现要点（v0.1）
+
+- 实体 `isolation` 字段三值生效（process/sandbox/container），UI 向导可选；
+- **L2**：`sandbox.ts` 用 `grantArgs({readOnly:['/'], readWrite:['/dev/null', home, logs]})`
+  包裹实体进程；非 Linux 平台明确报错；
+- **L3**：`container.ts` 每版本构建镜像 `dsh-entity-manager:<ref>`，Dockerfile：
+  `node:22-slim` + build 工具（python3/make/g++/cmake）+ `npm rebuild`（编译
+  node-pty、koffi 等无 Linux 预编译产物的原生模块）+ 透明 TCP 代理
+  （0.0.0.0:port+1 → 127.0.0.1:port，因为 DSH web 拒绝绑 0.0.0.0，且 Docker
+  Desktop host 网络是 VM 级 loopback）；`-p <port>:<port+1>` 映射；
+  状态记录 containerId；日志走 `docker logs`；停止走 `docker stop/rm`；
+  重启后 reconcile 校验容器存活；
+- 实测：macOS Docker Desktop 28.5 全链路通过（镜像构建→容器运行→GUI 200→
+  日志→停止→reconcile）；镜像 registry 依赖国内镜像源
+  （`~/.docker/daemon.json` registry-mirrors）；`DSHM_NPM_REGISTRY` 供版本安装加速。
 
 ## 6. 版本切换与升级安全
 
