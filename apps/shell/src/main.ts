@@ -135,10 +135,18 @@ void app.whenReady().then(async () => {
     if (typeof url === 'string' && url.startsWith('http://127.0.0.1:')) openEntityWindow(url)
   })
   ipcMain.handle('dshm:open-manager', () => { mainWindow?.show(); mainWindow?.focus() })
-  ipcMain.handle('dshm:pick-directory', async () => {
+  ipcMain.handle('dshm:pick-directory', async (_event, title?: string) => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
-      title: 'Choose directory',
+      title: title ?? 'Choose directory',
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null
+  })
+  ipcMain.handle('dshm:pick-file', async (_event, title?: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: title ?? 'Choose file',
+      filters: [{ name: 'Entity bundle', extensions: ['gz', 'zip'] }],
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null
   })

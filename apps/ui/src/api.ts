@@ -16,7 +16,8 @@ declare global {
       managerUrl?: string
       openEntityWindow?: (url: string) => Promise<unknown>
       openManager?: () => Promise<unknown>
-      pickDirectory?: () => Promise<string | null>
+      pickDirectory?: (title?: string) => Promise<string | null>
+      pickFile?: (title?: string) => Promise<string | null>
     }
   }
 }
@@ -148,9 +149,16 @@ export function exportAllEntities(dir: string): Promise<{ exported: Array<{ id: 
 }
 
 /** Native directory picker (Electron); prompt fallback in a plain browser. */
-export async function pickDirectory(): Promise<string | null> {
-  if (window.dshm?.pickDirectory) return window.dshm.pickDirectory()
+export async function pickDirectory(title?: string): Promise<string | null> {
+  if (window.dshm?.pickDirectory) return window.dshm.pickDirectory(title)
   const picked = window.prompt('Directory path (browser mode):')
+  return picked && picked.trim() ? picked.trim() : null
+}
+
+/** Native file picker (Electron); prompt fallback in a plain browser. */
+export async function pickFile(title?: string): Promise<string | null> {
+  if (window.dshm?.pickFile) return window.dshm.pickFile(title)
+  const picked = window.prompt('File path (browser mode):')
   return picked && picked.trim() ? picked.trim() : null
 }
 

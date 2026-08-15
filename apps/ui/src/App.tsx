@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { EntityInfo, HealthInfo, JobInfo, SnapshotInfo, VersionInfo } from '@dshm/shared'
 import {
   BASE,
@@ -18,6 +18,7 @@ import {
   listSnapshots,
   patchEntity,
   pickDirectory,
+  pickFile,
   registerLocal,
   restoreSnapshot,
   startEntity,
@@ -199,10 +200,12 @@ function CreateWizard(props: {
 
   const submit = () => {
     if (!name.trim() || !ref) return
+    // use the selected version's real source (npm / local / git-tag)
+    const selected = versions.find((v) => v.ref === ref && (v.installed || v.source === 'npm'))
     void act(t('creatingBusy'), async () => {
       await createEntity({
         name: name.trim(),
-        version: { source: 'npm', ref },
+        version: { source: selected?.source ?? 'npm', ref },
         profile,
         port: 0,
         isolation: isolation as 'process' | 'sandbox' | 'container',
@@ -295,8 +298,9 @@ function DetailView(props: {
 
   const switchVersion = () => {
     if (!switchRef || switchRef === entity.spec.version.ref) return
+    const selected = versions.filter((v) => v.installed).find((v) => v.ref === switchRef)
     void act(t('switchingBusy'), async () => {
-      await patchEntity(entity.spec.id, { version: { source: 'npm', ref: switchRef }, restart: true })
+      await patchEntity(entity.spec.id, { version: { source: selected?.source ?? 'npm', ref: switchRef }, restart: true })
       setSwitchRef('')
       onChanged()
     })
@@ -399,6 +403,22 @@ function DetailView(props: {
 
 /* ------------------------------------------------------------------ */
 
+function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="modal-overlay" onClick={props.onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{props.title}</h3>
+          <button className="chevron" onClick={props.onClose}>✕</button>
+        </div>
+        <div className="modal-body">{props.children}</div>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
 function ImportPanel(props: {
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   onImported: () => void
@@ -406,29 +426,39 @@ function ImportPanel(props: {
 }) {
   const { act, onImported, t } = props
   const [path, setPath] = useState('')
+
+  const chooseBundle = async () => {
+    const file = await pickFile(t('pickFileTitle'))
+    if (file) setPath(file)
+  }
+
   return (
     <section className="panel">
       <h2>{t('importBundle')}</h2>
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (!path.trim()) return
-          void act(t('importingBusy'), async () => {
-            await importEntity(path.trim())
-            setPath('')
-            onImported()
-          })
-        }}
-      >
+      <div className="form">
         <label>{t('bundlePath')}
-          <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/path/to/entity-….tar.gz" required />
+          <div className="dir-pick">
+            <code className="pick-value">{path || t('chooseBundleFile')}</code>
+            <button type="button" onClick={() => void chooseBundle()}>{t('chooseBundleFile')}</button>
+          </div>
         </label>
         <div className="form-row">
-          <button type="submit">{t('import')}</button>
+          <button
+            disabled={!path}
+            onClick={() => {
+              if (!path) return
+              void act(t('importingBusy'), async () => {
+                await importEntity(path)
+                setPath('')
+                onImported()
+              })
+            }}
+          >
+            {t('import')}
+          </button>
           <span className="muted">{t('createsFresh')}</span>
         </div>
-      </form>
+      </div>
     </section>
   )
 }
@@ -444,10 +474,9 @@ function VersionsPanel(props: {
   t: T
 }) {
   const { versions, jobs, act, onRefresh, onNotice, t } = props
-  const [showAddLocal, setShowAddLocal] = useState(false)
+  const [modal, setModal] = useState<'local' | 'dir' | null>(null)
   const [localLabel, setLocalLabel] = useState('')
   const [localPath, setLocalPath] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [settingsDir, setSettingsDir] = useState<string | null>(null)
   const [pendingDir, setPendingDir] = useState<string | null>(null)
 
@@ -455,9 +484,29 @@ function VersionsPanel(props: {
     void getSettings().then((s) => setSettingsDir(s.versionsDir)).catch(() => {})
   }, [])
 
-  const chooseDataDir = async () => {
-    const dir = await pickDirectory()
-    if (dir) setPendingDir(dir)
+  const installJobs = jobs.filter((j) => j.kind === 'version-install')
+  const activeInstall = installJobs.find((j) => j.status === 'pending' || j.status === 'running')
+  const jobFor = (ref: string): JobInfo | undefined =>
+    installJobs.find((j) => j.target === ref)
+
+  const openLocalModal = () => {
+    setLocalLabel('')
+    setLocalPath('')
+    setModal('local')
+  }
+
+  const openDirModal = () => {
+    setPendingDir(null)
+    setModal('dir')
+  }
+
+  const registerLocalVersion = () => {
+    if (!localLabel.trim() || !localPath.trim()) return
+    void act(t('addingLocalBusy'), async () => {
+      await registerLocal(localLabel.trim(), localPath.trim())
+      setModal(null)
+      onRefresh()
+    })
   }
 
   const applyDataDir = () => {
@@ -465,7 +514,7 @@ function VersionsPanel(props: {
     void act(t('applyingBusy'), async () => {
       const result = await updateSettings(pendingDir)
       setSettingsDir(result.versionsDir)
-      setPendingDir(null)
+      setModal(null)
       const parts: string[] = [`${t('changedDir')}: ${result.versionsDir}`]
       if (result.moved.length > 0) parts.push(`${t('movedVersions')}: ${result.moved.join(', ')}`)
       if (result.errors.length > 0) parts.push(`${t('moveErrors')}: ${result.errors.join('; ')}`)
@@ -474,122 +523,93 @@ function VersionsPanel(props: {
     })
   }
 
-  const installJobs = jobs.filter((j) => j.kind === 'version-install')
-  const activeInstall = installJobs.find((j) => j.status === 'pending' || j.status === 'running')
-  const jobFor = (ref: string): JobInfo | undefined =>
-    installJobs.find((j) => j.target === ref)
-
-  const chooseLocalDir = async () => {
-    const dir = await pickDirectory()
-    if (dir) setLocalPath(dir)
-  }
-
   return (
     <section className="panel">
       <div className="panel-head">
         <h2>{t('versions')}</h2>
         <span className="actions">
           <button onClick={() => void act(t('refreshingBusy'), onRefresh)}>⟳ {t('refresh')}</button>
-          <button onClick={() => setShowAddLocal(!showAddLocal)}>+ {t('addLocal')}</button>
+          <button onClick={openLocalModal}>+ {t('addLocal')}</button>
+          <button onClick={openDirModal}>+ {t('versionDataDir')}</button>
         </span>
       </div>
-      <div className="version-detail dir-settings">
-        <span className="muted">{t('versionDataDir')}</span>
-        <div className="dir-pick">
-          <code>{pendingDir ?? settingsDir ?? '…'}</code>
-          <button type="button" onClick={() => void chooseDataDir()}>{t('chooseDir')}</button>
-          <button
-            type="button"
-            disabled={!pendingDir || pendingDir === settingsDir}
-            onClick={applyDataDir}
-          >
-            {t('apply')}
-          </button>
-        </div>
-        <span className="muted">{t('applyDirHint')}</span>
-      </div>
-      {showAddLocal && (
-        <form
-          className="form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!localLabel.trim() || !localPath.trim()) return
-            void act(t('addingLocalBusy'), async () => {
-              await registerLocal(localLabel.trim(), localPath.trim())
-              setLocalLabel('')
-              setLocalPath('')
-              setShowAddLocal(false)
-              onRefresh()
-            })
-          }}
-        >
+
+      {modal === 'local' && (
+        <Modal title={t('addLocalTitle')} onClose={() => setModal(null)}>
           <label>{t('label')}
-            <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" required />
+            <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" autoFocus />
           </label>
           <label>{t('localDir')}
             <div className="dir-pick">
-              <input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/path/to/deepseek-harness" required />
-              <button type="button" onClick={() => void chooseLocalDir()}>{t('chooseDir')}</button>
+              <code className="pick-value">{localPath || '…'}</code>
+              <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setLocalPath(d) })}>
+                {t('chooseDir')}
+              </button>
             </div>
           </label>
           <div className="form-row">
-            <button type="submit">{t('registerLocal')}</button>
+            <button disabled={!localLabel.trim() || !localPath.trim()} onClick={registerLocalVersion}>{t('register')}</button>
+            <button onClick={() => setModal(null)}>{t('cancel')}</button>
           </div>
-        </form>
+        </Modal>
       )}
+
+      {modal === 'dir' && (
+        <Modal title={t('dataDirTitle')} onClose={() => setModal(null)}>
+          <label>{t('versionDataDir')}
+            <div className="dir-pick">
+              <code className="pick-value">{pendingDir ?? settingsDir ?? '…'}</code>
+              <button type="button" onClick={() => void pickDirectory(t('pickDirTitle')).then((d) => { if (d) setPendingDir(d) })}>
+                {t('chooseDir')}
+              </button>
+            </div>
+          </label>
+          <div className="form-row">
+            <button disabled={!pendingDir || pendingDir === settingsDir} onClick={applyDataDir}>{t('apply')}</button>
+            <button onClick={() => setModal(null)}>{t('cancel')}</button>
+          </div>
+          <span className="muted">{t('applyDirHint')}</span>
+        </Modal>
+      )}
+
       {versions.length === 0 && <p className="muted">{t('noVersions')}</p>}
       <ul className="cards">
         {versions.map((version) => {
           const job = jobFor(version.ref)
           const isInstalling = job !== undefined && (job.status === 'pending' || job.status === 'running')
-          const open = expanded === version.ref
           return (
             <li key={`${version.source}:${version.ref}`} className="card version-row">
               <strong>{version.ref}</strong>
               <span className="badge">{version.source}</span>
-              {version.installed
-                ? <span className="badge ok">{t('installed')}</span>
-                : (
-                  <span className="actions">
-                    <span className="badge">{t('available')}</span>
-                    <button
-                      disabled={activeInstall !== undefined && !isInstalling}
-                      onClick={() => void act(t('installingBusy'), () => installVersion('npm', version.ref))}
-                    >
-                      {isInstalling ? t('installing') : t('install')}
-                    </button>
-                  </span>
+              <div className="version-middle">
+                {isInstalling && (
+                  <>
+                    <div className="progress"><div className="progress-bar running" /></div>
+                    <span className="muted">{t('installing')} · {t('installingOne')}</span>
+                  </>
                 )}
-              <button
-                className="chevron"
-                onClick={() => setExpanded(open ? null : version.ref)}
-                title={open ? t('collapse') : t('showDetails')}
-              >
-                {open ? '▴' : '▾'}
-              </button>
-              {open && (
-                <div className="version-detail">
-                  {job && (job.status === 'pending' || job.status === 'running') && (
+                {job?.status === 'failed' && (
+                  <span className="err-text">{t('installFailed')}: {job.error ?? 'unknown error'}</span>
+                )}
+                {!isInstalling && version.installed && version.installDir && (
+                  <code className="muted">{version.installDir}</code>
+                )}
+              </div>
+              <span className="version-status">
+                {version.installed
+                  ? <span className="badge ok">{t('installed')}</span>
+                  : (
                     <>
-                      <div className="progress"><div className="progress-bar running" /></div>
-                      <span className="muted">{t('installingOne')}</span>
+                      <span className="badge">{t('available')}</span>
+                      <button
+                        disabled={activeInstall !== undefined && !isInstalling}
+                        onClick={() => void act(t('installingBusy'), () => installVersion('npm', version.ref))}
+                      >
+                        {isInstalling ? t('installing') : t('install')}
+                      </button>
                     </>
                   )}
-                  {job && job.status === 'done' && <span className="badge ok">{t('installDone')}</span>}
-                  {job && job.status === 'failed' && (
-                    <span className="err-text">{t('installFailed')}: {job.error ?? 'unknown error'}</span>
-                  )}
-                  {version.installed && version.installDir && (
-                    <div className="muted">{t('installedAt')}: <code>{version.installDir}</code></div>
-                  )}
-                  {job && job.startedAt && (
-                    <div className="muted">
-                      {t('started')} {new Date(job.startedAt).toLocaleTimeString()}
-                      {job.finishedAt ? ` · ${t('finished')} ${new Date(job.finishedAt).toLocaleTimeString()}` : ''}
-                    </div>
-                  )}
-                </div>
-              )}
+              </span>
             </li>
           )
         })}

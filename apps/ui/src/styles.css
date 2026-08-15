@@ -174,3 +174,32 @@ button.link:hover { color: var(--accent); }
   border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text);
   white-space: nowrap;
 }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal {
+  width: 460px; max-width: 92vw; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.modal-head h3 { margin: 0; font-size: 15px; }
+.modal-head .chevron { font-size: 15px; }
+.modal-body { display: flex; flex-direction: column; gap: 12px; }
+.modal-body label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.modal-body input {
+  background: #0c0e12; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; font-size: 14px;
+}
+.pick-value {
+  flex: 1; padding: 7px 9px; font-size: 12px; background: #0c0e12;
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.version-row { gap: 10px; }
+.version-middle {
+  flex: 1 1 200px; min-width: 120px; display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; align-items: flex-start;
+}
+.version-status { margin-left: auto; display: flex; align-items: center; gap: 8px; }
