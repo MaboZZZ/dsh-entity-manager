@@ -10,3 +10,4 @@ dist/
 apps/shell/release/
 DSH架构/
 dsh-plugin-opportunities.md
+.npmrc
