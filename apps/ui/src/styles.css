@@ -162,3 +162,15 @@ button.link:hover { color: var(--accent); }
   0% { margin-left: 0%; }
   100% { margin-left: 60%; }
 }
+.lang-toggle {
+  margin-left: auto; font-size: 12px; padding: 4px 12px; border-radius: 6px;
+  border: 1px solid var(--border); background: #22262f; color: var(--text); cursor: pointer;
+}
+.lang-toggle:hover { border-color: var(--accent); }
+.dir-pick { display: flex; gap: 8px; }
+.dir-pick input { flex: 1; }
+.dir-pick button {
+  font-size: 12px; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text);
+  white-space: nowrap;
+}

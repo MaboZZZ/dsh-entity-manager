@@ -11,7 +11,7 @@
  * follow-up (M4 packaging).
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -95,6 +95,25 @@ export class SnapshotManager {
     tar(['-czf', outPath, '-C', work, 'bundle'])
     rmSync(work, { recursive: true, force: true })
     return { path: outPath, sizeBytes: statSync(outPath).size }
+  }
+
+  /** Export an entity's bundle into a user-chosen directory (copies it there). */
+  async exportTo(entity: EntityInfo, dir: string): Promise<{ path: string; sizeBytes: number }> {
+    const { path, sizeBytes } = await this.exportBundle(entity)
+    mkdirSync(dir, { recursive: true })
+    const dest = join(dir, basename(path))
+    copyFileSync(path, dest)
+    return { path: dest, sizeBytes }
+  }
+
+  /** Export every entity's bundle into a user-chosen directory. */
+  async exportAll(entities: EntityInfo[], dir: string): Promise<Array<{ id: string; path: string; sizeBytes: number }>> {
+    mkdirSync(dir, { recursive: true })
+    const out: Array<{ id: string; path: string; sizeBytes: number }> = []
+    for (const entity of entities) {
+      out.push({ id: entity.spec.id, ...(await this.exportTo(entity, dir)) })
+    }
+    return out
   }
 
   /**

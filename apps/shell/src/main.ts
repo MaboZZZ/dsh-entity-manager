@@ -8,7 +8,7 @@
  *   and report the manager URL so fetches do not depend on a proxy.
  * - On quit, running entities are stopped so no orphan DSH processes remain.
  */
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createManagerServer } from '@dshm/manager'
@@ -135,6 +135,13 @@ void app.whenReady().then(async () => {
     if (typeof url === 'string' && url.startsWith('http://127.0.0.1:')) openEntityWindow(url)
   })
   ipcMain.handle('dshm:open-manager', () => { mainWindow?.show(); mainWindow?.focus() })
+  ipcMain.handle('dshm:pick-directory', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Choose directory',
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0] ?? null
+  })
 
   createWindow()
   buildMenu()

@@ -16,6 +16,7 @@ declare global {
       managerUrl?: string
       openEntityWindow?: (url: string) => Promise<unknown>
       openManager?: () => Promise<unknown>
+      pickDirectory?: () => Promise<string | null>
     }
   }
 }
@@ -128,6 +129,29 @@ export function restoreSnapshot(id: string, snapshot: string): Promise<EntityInf
 
 export function exportEntity(id: string): Promise<ExportResult> {
   return request<ExportResult>(`/entities/${id}/export`)
+}
+
+export function exportEntityTo(id: string, dir: string): Promise<ExportResult> {
+  return request<ExportResult>(`/entities/${id}/export`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+}
+
+export function exportAllEntities(dir: string): Promise<{ exported: Array<{ id: string; path: string; sizeBytes: number }> }> {
+  return request<{ exported: Array<{ id: string; path: string; sizeBytes: number }> }>('/entities/export-all', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  })
+}
+
+/** Native directory picker (Electron); prompt fallback in a plain browser. */
+export async function pickDirectory(): Promise<string | null> {
+  if (window.dshm?.pickDirectory) return window.dshm.pickDirectory()
+  const picked = window.prompt('Directory path (browser mode):')
+  return picked && picked.trim() ? picked.trim() : null
 }
 
 export function importEntity(path: string): Promise<EntityInfo> {

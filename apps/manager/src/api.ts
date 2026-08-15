@@ -300,6 +300,34 @@ export function createManagerServer(options: ManagerServerOptions) {
     }
   })
 
+  routes.set('POST /api/entities/{id}/export', async (req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const raw = (await readJson(req)) as { dir?: string } | undefined
+    if (!raw || typeof raw.dir !== 'string' || raw.dir === '') {
+      return sendError(res, 400, 'dir is required')
+    }
+    try {
+      const result = await snapshots.exportTo(info, raw.dir)
+      sendJson(res, 200, result)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('POST /api/entities/export-all', async (req, res) => {
+    const raw = (await readJson(req)) as { dir?: string } | undefined
+    if (!raw || typeof raw.dir !== 'string' || raw.dir === '') {
+      return sendError(res, 400, 'dir is required')
+    }
+    try {
+      const result = await snapshots.exportAll(store.list(), raw.dir)
+      sendJson(res, 200, { exported: result })
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
   routes.set('POST /api/entities/import', async (req, res) => {
     const raw = (await readJson(req)) as Partial<ImportRequest> | undefined
     if (!raw || typeof raw.path !== 'string' || raw.path === '') {

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { EntityInfo, HealthInfo, JobInfo, SnapshotInfo, VersionInfo } from '@dshm/shared'
 import {
   BASE,
   createEntity,
   createSnapshot,
   deleteEntity,
-  exportEntity,
+  exportAllEntities,
+  exportEntityTo,
   getEntities,
   getHealth,
   getJobs,
@@ -15,15 +16,18 @@ import {
   installVersion,
   listSnapshots,
   patchEntity,
+  pickDirectory,
   registerLocal,
   restoreSnapshot,
   startEntity,
   stopEntity,
 } from './api.ts'
+import { useLang } from './i18n.ts'
 
 const POLL_MS = 3000
 
 export function App() {
+  const { lang, t, toggle } = useLang()
   const [health, setHealth] = useState<HealthInfo | null>(null)
   const [entities, setEntities] = useState<EntityInfo[]>([])
   const [versions, setVersions] = useState<VersionInfo[]>([])
@@ -67,13 +71,40 @@ export function App() {
     }
   }, [refresh])
 
+  const exportEntityWithDir = useCallback(async (id: string): Promise<string | null> => {
+    const dir = await pickDirectory()
+    if (!dir) {
+      setError(t('noDirChosen'))
+      return null
+    }
+    const result = await exportEntityTo(id, dir)
+    setError(null)
+    return result.path
+  }, [t])
+
+  const exportAllWithDir = useCallback(async (): Promise<string | null> => {
+    const dir = await pickDirectory()
+    if (!dir) {
+      setError(t('noDirChosen'))
+      return null
+    }
+    const result = await exportAllEntities(dir)
+    setError(null)
+    return result.exported.length > 0 ? result.exported[0]!.path : null
+  }, [t])
+
   return (
     <div className="app">
       <header className="app-header">
         <h1>DSH Entity Manager</h1>
         <span className="health">
-          {health ? `manager v${health.version} · ${health.entities} entities · up ${health.uptimeSeconds}s` : 'connecting…'}
+          {health
+            ? t('managerUp', { version: health.version, entities: health.entities, uptime: health.uptimeSeconds })
+            : t('connecting')}
         </span>
+        <button className="lang-toggle" onClick={toggle} title={lang === 'zh' ? 'Switch to English' : '切换到中文'}>
+          {t('langToggle')}
+        </button>
       </header>
 
       {error && <div className="banner error">{error}</div>}
@@ -86,13 +117,21 @@ export function App() {
             onBack={() => setDetail(null)}
             onChanged={() => void refresh()}
             act={act}
+            t={t}
           />
         : (
           <>
             <section className="panel">
-              <h2>Entities</h2>
+              <div className="panel-head">
+                <h2>{t('entities')}</h2>
+                {entities.length > 0 && (
+                  <span className="actions">
+                    <button onClick={() => void act(t('exportAllBusy'), exportAllWithDir)}>{t('exportAll')}</button>
+                  </span>
+                )}
+              </div>
               {entities.length === 0
-                ? <p className="muted">No entities yet — create one below.</p>
+                ? <p className="muted">{t('noEntities')}</p>
                 : (
                   <ul className="cards">
                     {entities.map((entity) => (
@@ -105,13 +144,17 @@ export function App() {
                         {entity.status.port !== null && <code className="muted">:{entity.status.port}</code>}
                         <span className="actions">
                           {entity.status.phase === 'running'
-                            ? <button onClick={() => void act('stopping', () => stopEntity(entity.spec.id))}>stop</button>
-                            : <button onClick={() => void act('starting', () => startEntity(entity.spec.id))}>start</button>}
+                            ? <button onClick={() => void act(t('stoppingBusy'), () => stopEntity(entity.spec.id))}>{t('stop')}</button>
+                            : <button onClick={() => void act(t('startingBusy'), () => startEntity(entity.spec.id))}>{t('start')}</button>}
                           {entity.status.port !== null && (
-                            <a href={`http://127.0.0.1:${String(entity.status.port)}/`} target="_blank" rel="noreferrer">open</a>
+                            <a href={`http://127.0.0.1:${String(entity.status.port)}/`} target="_blank" rel="noreferrer">{t('open')}</a>
                           )}
-                          <button onClick={() => setDetail(entity)}>detail</button>
-                          <button className="danger" onClick={() => void act('deleting', () => deleteEntity(entity.spec.id))}>delete</button>
+                          <button onClick={() => setDetail(entity)}>{t('detail')}</button>
+                          <button onClick={() => void act(t('exportingBusy'), async () => {
+                            const path = await exportEntityWithDir(entity.spec.id)
+                            if (path) setError(`${t('exportedTo')} ${path}`)
+                          })}>{t('export')}</button>
+                          <button className="danger" onClick={() => void act(t('deletingBusy'), () => deleteEntity(entity.spec.id))}>{t('delete')}</button>
                         </span>
                       </li>
                     ))}
@@ -119,11 +162,11 @@ export function App() {
                 )}
             </section>
 
-            <CreateWizard versions={versions} onCreated={() => void refresh()} act={act} />
+            <CreateWizard versions={versions} onCreated={() => void refresh()} act={act} t={t} />
 
-            <ImportPanel act={act} onImported={() => void refresh()} />
+            <ImportPanel act={act} onImported={() => void refresh()} t={t} />
 
-            <VersionsPanel versions={versions} jobs={jobs} act={act} onRefresh={refresh} />
+            <VersionsPanel versions={versions} jobs={jobs} act={act} onRefresh={refresh} t={t} />
           </>
         )}
     </div>
@@ -132,12 +175,15 @@ export function App() {
 
 /* ------------------------------------------------------------------ */
 
+type T = ReturnType<typeof useLang>['t']
+
 function CreateWizard(props: {
   versions: VersionInfo[]
   onCreated: () => void
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
+  t: T
 }) {
-  const { versions, onCreated, act } = props
+  const { versions, onCreated, act, t } = props
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [ref, setRef] = useState('')
@@ -151,7 +197,7 @@ function CreateWizard(props: {
 
   const submit = () => {
     if (!name.trim() || !ref) return
-    void act('creating', async () => {
+    void act(t('creatingBusy'), async () => {
       await createEntity({
         name: name.trim(),
         version: { source: 'npm', ref },
@@ -174,44 +220,45 @@ function CreateWizard(props: {
   return (
     <section className="panel">
       <h2>
-        <button className="link" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} New entity</button>
+        <button className="link" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} {t('newEntity')}</button>
       </h2>
       {open && (
         <form className="form" onSubmit={(e) => { e.preventDefault(); submit() }}>
-          <label>Name
+          <label>{t('name')}
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. sandbox" required />
           </label>
-          <label>Version
+          <label>{t('version')}
             <select value={ref} onChange={(e) => setRef(e.target.value)} required>
-              <option value="" disabled>pick a version…</option>
+              <option value="" disabled>{t('pickVersion')}</option>
               {versionOptions.map((v) => (
                 <option key={`${v.source}:${v.ref}`} value={v.ref}>
-                  {v.ref}{v.installed ? '' : ' (needs install)'}{v.source === 'local' ? ' [local]' : ''}
+                  {v.ref}{v.installed ? '' : t('needsInstall')}{v.source === 'local' ? t('localTag') : ''}
                 </option>
               ))}
             </select>
           </label>
-          <label>Profile
+          <label>{t('profile')}
             <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-              <option value="web">web (browser GUI)</option>              <option value="headless">headless</option>
+              <option value="web">{t('webProfile')}</option>
+              <option value="headless">{t('headlessProfile')}</option>
             </select>
           </label>
-          <label>Isolation
+          <label>{t('isolation')}
             <select value={isolation} onChange={(e) => setIsolation(e.target.value)}>
-              <option value="process">process (default)</option>
-              <option value="sandbox">sandbox (landlock, Linux only)</option>
-              <option value="container">container (Docker)</option>
+              <option value="process">{t('processIso')}</option>
+              <option value="sandbox">{t('sandboxIso')}</option>
+              <option value="container">{t('containerIso')}</option>
             </select>
           </label>
-          <label>DeepSeek API key <span className="muted">(optional — also configurable inside the entity)</span>
+          <label>{t('apiKey')} <span className="muted">{t('optional')}</span>
             <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
           </label>
-          <label>Base URL <span className="muted">(optional)</span>
+          <label>{t('baseUrl')} <span className="muted">{t('optional')}</span>
             <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
           </label>
           <div className="form-row">
-            <button type="submit">Create entity</button>
-            <span className="muted">port is auto-assigned and kept stable</span>
+            <button type="submit">{t('createEntity')}</button>
+            <span className="muted">{t('portAuto')}</span>
           </div>
         </form>
       )}
@@ -227,15 +274,15 @@ function DetailView(props: {
   onBack: () => void
   onChanged: () => void
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
+  t: T
 }) {
-  const { entity, versions, onBack, onChanged, act } = props
+  const { entity, versions, onBack, onChanged, act, t } = props
   const [logs, setLogs] = useState('')
   const [switchRef, setSwitchRef] = useState('')
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
   const [exportPath, setExportPath] = useState<string | null>(null)
   const iframeKey = `${entity.spec.id}-${entity.status.port ?? 'off'}`
 
-  // live logs + snapshots while the detail is open
   useEffect(() => {
     const timer = setInterval(() => {
       void getLogs(entity.spec.id, 400).then(({ logs }) => setLogs(logs)).catch(() => {})
@@ -246,11 +293,18 @@ function DetailView(props: {
 
   const switchVersion = () => {
     if (!switchRef || switchRef === entity.spec.version.ref) return
-    void act('switching version', async () => {
+    void act(t('switchingBusy'), async () => {
       await patchEntity(entity.spec.id, { version: { source: 'npm', ref: switchRef }, restart: true })
       setSwitchRef('')
       onChanged()
     })
+  }
+
+  const doExport = async () => {
+    const dir = await pickDirectory()
+    if (!dir) return
+    const result = await exportEntityTo(entity.spec.id, dir)
+    setExportPath(result.path)
   }
 
   const running = entity.status.phase === 'running'
@@ -260,56 +314,53 @@ function DetailView(props: {
   return (
     <section className="panel detail">
       <div className="detail-head">
-        <button className="link" onClick={onBack}>← back</button>
+        <button className="link" onClick={onBack}>{t('back')}</button>
         <h2>{entity.spec.name}</h2>
         <span className="badge">{entity.spec.version.ref}</span>
         <span className={`phase ${entity.status.phase}`}>{entity.status.phase}</span>
         <span className="actions">
           {running
-            ? <button onClick={() => void act('stopping', () => stopEntity(entity.spec.id))}>stop</button>
-            : <button onClick={() => void act('starting', () => startEntity(entity.spec.id))}>start</button>}
-          <button className="danger" onClick={() => void act('deleting', async () => { await deleteEntity(entity.spec.id); onBack(); })}>delete</button>
+            ? <button onClick={() => void act(t('stoppingBusy'), () => stopEntity(entity.spec.id))}>{t('stop')}</button>
+            : <button onClick={() => void act(t('startingBusy'), () => startEntity(entity.spec.id))}>{t('start')}</button>}
+          <button className="danger" onClick={() => void act(t('deletingBusy'), async () => { await deleteEntity(entity.spec.id); onBack(); })}>{t('delete')}</button>
         </span>
       </div>
 
       <dl className="meta">
-        <dt>home</dt><dd><code>{entity.spec.homeDir}</code></dd>
-        <dt>port</dt><dd><code>{port ?? '—'}</code></dd>
-        <dt>pid</dt><dd><code>{entity.status.pid ?? '—'}</code></dd>
-        <dt>profile</dt><dd><code>{entity.spec.profile}</code></dd>
+        <dt>{t('home')}</dt><dd><code>{entity.spec.homeDir}</code></dd>
+        <dt>{t('port')}</dt><dd><code>{port ?? '—'}</code></dd>
+        <dt>{t('pid')}</dt><dd><code>{entity.status.pid ?? '—'}</code></dd>
+        <dt>{t('profileLabel')}</dt><dd><code>{entity.spec.profile}</code></dd>
       </dl>
 
       <div className="version-switch">
-        <span className="muted">Switch version:</span>
+        <span className="muted">{t('switchVersion')}</span>
         <select value={switchRef} onChange={(e) => setSwitchRef(e.target.value)}>
-          <option value="" disabled>pick a version…</option>
+          <option value="" disabled>{t('pickVersion')}</option>
           {versions.filter((v) => v.installed).map((v) => (
             <option key={`${v.source}:${v.ref}`} value={v.ref}>
-              {v.ref}{v.source === 'local' ? ' [local]' : ''}
+              {v.ref}{v.source === 'local' ? t('localTag') : ''}
             </option>
           ))}
         </select>
         <button onClick={switchVersion} disabled={!switchRef || switchRef === entity.spec.version.ref}>
-          switch & restart
+          {t('switchRestart')}
         </button>
-        <span className="muted">data in the entity home stays untouched</span>
+        <span className="muted">{t('dataKept')}</span>
       </div>
 
       <div className="snapshots">
-        <div className="subhead">Snapshots &amp; transfer</div>
+        <div className="subhead">{t('snapshots')}</div>
         <div className="snap-row">
-          <button onClick={() => void act('snapshotting', async () => {
+          <button onClick={() => void act(t('snapshottingBusy'), async () => {
             await createSnapshot(entity.spec.id)
             setSnapshots(await listSnapshots(entity.spec.id))
-          })}>take snapshot</button>
-          <button onClick={() => void act('exporting', async () => {
-            const result = await exportEntity(entity.spec.id)
-            setExportPath(result.path)
-          })}>export bundle</button>
-          <a href={`${BASE}/exports/${exportPath?.split('/').pop() ?? ''}`} className={exportPath ? '' : 'hidden'} download>download bundle</a>
+          })}>{t('takeSnapshot')}</button>
+          <button onClick={() => void act(t('exportingBusy'), doExport)}>{t('exportBundle')}</button>
+          <a href={`${BASE}/exports/${exportPath?.split('/').pop() ?? ''}`} className={exportPath ? '' : 'hidden'} download>{t('downloadBundle')}</a>
           {port !== null && openInAppWindow && (
             <button onClick={() => void openInAppWindow(`http://127.0.0.1:${port}/`)}>
-              open in app window
+              {t('openInWindow')}
             </button>
           )}
         </div>
@@ -318,9 +369,9 @@ function DetailView(props: {
             {snapshots.map((snap) => (
               <li key={snap.id}>
                 <span className="badge">{new Date(snap.createdAt).toLocaleString()}</span>
-                <span className="muted">{snap.hasHome ? `${snap.sizeBytes} B home` : 'spec only'}</span>
-                <button className="danger" onClick={() => void act('restoring', () => restoreSnapshot(entity.spec.id, snap.id))}>
-                  restore
+                <span className="muted">{snap.hasHome ? `${snap.sizeBytes} B home` : t('specOnly')}</span>
+                <button className="danger" onClick={() => void act(t('restoringBusy'), () => restoreSnapshot(entity.spec.id, snap.id))}>
+                  {t('restore')}
                 </button>
               </li>
             ))}
@@ -330,14 +381,14 @@ function DetailView(props: {
 
       <div className="gui-and-logs">
         <div className="gui">
-          <div className="subhead">GUI{port === null ? ' (not running)' : ` — http://127.0.0.1:${port}/`}</div>
+          <div className="subhead">{t('gui')}{port === null ? t('notRunning') : ` — http://127.0.0.1:${port}/`}</div>
           {port !== null
             ? <iframe key={iframeKey} title="entity GUI" src={`http://127.0.0.1:${port}/`} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
-            : <div className="placeholder">start the entity to embed its GUI here</div>}
+            : <div className="placeholder">{t('startToEmbed')}</div>}
         </div>
         <div className="logs-pane">
-          <div className="subhead">logs</div>
-          <pre className="logs">{logs || '(waiting for output…)'}</pre>
+          <div className="subhead">{t('logs')}</div>
+          <pre className="logs">{logs || t('waitingLogs')}</pre>
         </div>
       </div>
     </section>
@@ -349,30 +400,31 @@ function DetailView(props: {
 function ImportPanel(props: {
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   onImported: () => void
+  t: T
 }) {
-  const { act, onImported } = props
+  const { act, onImported, t } = props
   const [path, setPath] = useState('')
   return (
     <section className="panel">
-      <h2>Import entity bundle</h2>
+      <h2>{t('importBundle')}</h2>
       <form
         className="form"
         onSubmit={(e) => {
           e.preventDefault()
           if (!path.trim()) return
-          void act('importing', async () => {
+          void act(t('importingBusy'), async () => {
             await importEntity(path.trim())
             setPath('')
             onImported()
           })
         }}
       >
-        <label>Bundle path on this machine
+        <label>{t('bundlePath')}
           <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/path/to/entity-….tar.gz" required />
         </label>
         <div className="form-row">
-          <button type="submit">Import</button>
-          <span className="muted">creates a fresh entity with a new id and home</span>
+          <button type="submit">{t('import')}</button>
+          <span className="muted">{t('createsFresh')}</span>
         </div>
       </form>
     </section>
@@ -386,26 +438,31 @@ function VersionsPanel(props: {
   jobs: JobInfo[]
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   onRefresh: () => Promise<unknown>
+  t: T
 }) {
-  const { versions, jobs, act, onRefresh } = props
+  const { versions, jobs, act, onRefresh, t } = props
   const [showAddLocal, setShowAddLocal] = useState(false)
   const [localLabel, setLocalLabel] = useState('')
   const [localPath, setLocalPath] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  // install jobs by target ref (one install at a time)
   const installJobs = jobs.filter((j) => j.kind === 'version-install')
   const activeInstall = installJobs.find((j) => j.status === 'pending' || j.status === 'running')
   const jobFor = (ref: string): JobInfo | undefined =>
     installJobs.find((j) => j.target === ref)
 
+  const chooseLocalDir = async () => {
+    const dir = await pickDirectory()
+    if (dir) setLocalPath(dir)
+  }
+
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Versions</h2>
+        <h2>{t('versions')}</h2>
         <span className="actions">
-          <button onClick={() => void act('refreshing versions', onRefresh)}>⟳ refresh</button>
-          <button onClick={() => setShowAddLocal(!showAddLocal)}>+ add local version</button>
+          <button onClick={() => void act(t('refreshingBusy'), onRefresh)}>⟳ {t('refresh')}</button>
+          <button onClick={() => setShowAddLocal(!showAddLocal)}>+ {t('addLocal')}</button>
         </span>
       </div>
       {showAddLocal && (
@@ -414,7 +471,7 @@ function VersionsPanel(props: {
           onSubmit={(e) => {
             e.preventDefault()
             if (!localLabel.trim() || !localPath.trim()) return
-            void act('adding local version', async () => {
+            void act(t('addingLocalBusy'), async () => {
               await registerLocal(localLabel.trim(), localPath.trim())
               setLocalLabel('')
               setLocalPath('')
@@ -423,18 +480,21 @@ function VersionsPanel(props: {
             })
           }}
         >
-          <label>Label
+          <label>{t('label')}
             <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" required />
           </label>
-          <label>本地 DSH 项目代码目录（checkout）
-            <input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/path/to/deepseek-harness" required />
+          <label>{t('localDir')}
+            <div className="dir-pick">
+              <input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/path/to/deepseek-harness" required />
+              <button type="button" onClick={() => void chooseLocalDir()}>{t('chooseDir')}</button>
+            </div>
           </label>
           <div className="form-row">
-            <button type="submit">Register local version</button>
+            <button type="submit">{t('registerLocal')}</button>
           </div>
         </form>
       )}
-      {versions.length === 0 && <p className="muted">No versions found — try the refresh button, or add a local checkout.</p>}
+      {versions.length === 0 && <p className="muted">{t('noVersions')}</p>}
       <ul className="cards">
         {versions.map((version) => {
           const job = jobFor(version.ref)
@@ -445,23 +505,22 @@ function VersionsPanel(props: {
               <strong>{version.ref}</strong>
               <span className="badge">{version.source}</span>
               {version.installed
-                ? <span className="badge ok">installed</span>
+                ? <span className="badge ok">{t('installed')}</span>
                 : (
                   <span className="actions">
-                    <span className="badge">available</span>
+                    <span className="badge">{t('available')}</span>
                     <button
                       disabled={activeInstall !== undefined && !isInstalling}
-                      onClick={() => void act('installing', () => installVersion('npm', version.ref))}
+                      onClick={() => void act(t('installingBusy'), () => installVersion('npm', version.ref))}
                     >
-                      {isInstalling ? 'installing…' : 'install'}
+                      {isInstalling ? t('installing') : t('install')}
                     </button>
                   </span>
                 )}
-              {/* rightmost: chevron to expand install details */}
               <button
                 className="chevron"
                 onClick={() => setExpanded(open ? null : version.ref)}
-                title={open ? 'collapse' : 'show install details'}
+                title={open ? t('collapse') : t('showDetails')}
               >
                 {open ? '▴' : '▾'}
               </button>
@@ -470,20 +529,20 @@ function VersionsPanel(props: {
                   {job && (job.status === 'pending' || job.status === 'running') && (
                     <>
                       <div className="progress"><div className="progress-bar running" /></div>
-                      <span className="muted">{job.status}… 安装中（一次只装一个版本）</span>
+                      <span className="muted">{t('installingOne')}</span>
                     </>
                   )}
-                  {job && job.status === 'done' && <span className="badge ok">install done</span>}
+                  {job && job.status === 'done' && <span className="badge ok">{t('installDone')}</span>}
                   {job && job.status === 'failed' && (
-                    <span className="err-text">install failed: {job.error ?? 'unknown error'}</span>
+                    <span className="err-text">{t('installFailed')}: {job.error ?? 'unknown error'}</span>
                   )}
                   {version.installed && version.installDir && (
-                    <div className="muted">installed at: <code>{version.installDir}</code></div>
+                    <div className="muted">{t('installedAt')}: <code>{version.installDir}</code></div>
                   )}
                   {job && job.startedAt && (
                     <div className="muted">
-                      started {new Date(job.startedAt).toLocaleTimeString()}
-                      {job.finishedAt ? ` · finished ${new Date(job.finishedAt).toLocaleTimeString()}` : ''}
+                      {t('started')} {new Date(job.startedAt).toLocaleTimeString()}
+                      {job.finishedAt ? ` · ${t('finished')} ${new Date(job.finishedAt).toLocaleTimeString()}` : ''}
                     </div>
                   )}
                 </div>
@@ -495,6 +554,3 @@ function VersionsPanel(props: {
     </section>
   )
 }
-
-/* ------------------------------------------------------------------ */
-

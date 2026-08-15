@@ -15,4 +15,6 @@ contextBridge.exposeInMainWorld('dshm', {
   /** open an entity GUI in its own app window */
   openEntityWindow: (url) => ipcRenderer.invoke('dshm:open-entity-window', url),
   openManager: () => ipcRenderer.invoke('dshm:open-manager'),
+  /** native directory picker; resolves to the picked path or null */
+  pickDirectory: () => ipcRenderer.invoke('dshm:pick-directory'),
 })
