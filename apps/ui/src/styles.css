@@ -140,8 +140,6 @@ button.link:hover { color: var(--accent); }
   font-size: 14px; cursor: pointer; padding: 0 4px;
 }
 .version-row .chevron:hover { color: var(--accent); }
-.version-detail {
-  flex-basis: 100.version-row { position: relative; }
 .version-row .chevron {
   margin-left: auto; background: none; border: none; color: var(--muted);
   font-size: 14px; cursor: pointer; padding: 0 4px;
