@@ -110,8 +110,34 @@ export interface CreateEntityRequest {
   env?: Record<string, string>
 }
 
+/** Partial update of an entity's spec (PATCH). */
+export interface UpdateEntityRequest {
+  name?: string
+  version?: VersionPin
+  profile?: string
+  port?: number
+  args?: string[]
+  env?: Record<string, string>
+  /** auto-restart after the change if it was running (default true) */
+  restart?: boolean
+}
+
 export interface ApiError {
   error: string
+}
+
+export type JobStatus = 'pending' | 'running' | 'done' | 'failed'
+
+/** One async manager job (version installs etc.), as seen by the UI. */
+export interface JobInfo {
+  id: string
+  kind: string
+  status: JobStatus
+  label: string
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
 }
 
 export interface HealthInfo {

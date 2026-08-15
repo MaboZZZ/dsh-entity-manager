@@ -23,7 +23,10 @@ import type {
   HealthInfo,
   InstallVersionRequest,
   RegisterLocalRequest,
+  UpdateEntityRequest,
+  VersionInfo,
 } from '@dshm/shared'
+import { JobRunner } from './jobs.ts'
 import { EntityStore } from './store.ts'
 import { EntityProcessManager } from './spawn.ts'
 import { NotImplemented, VersionRegistry } from './versions.ts'
@@ -108,6 +111,7 @@ function entityOr404(
 export function createManagerServer(options: ManagerServerOptions) {
   const store = new EntityStore(options.rootDir)
   const versions = new VersionRegistry(join(options.rootDir, 'versions'))
+  const jobs = new JobRunner()
   const processes = new EntityProcessManager(
     join(options.rootDir, 'homes'),
     join(options.rootDir, 'logs'),
@@ -196,6 +200,45 @@ export function createManagerServer(options: ManagerServerOptions) {
     sendJson(res, 200, updated)
   })
 
+  routes.set('PATCH /api/entities/{id}', async (req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const raw = (await readJson(req)) as Partial<UpdateEntityRequest> | undefined
+    if (!raw || typeof raw !== 'object') return sendError(res, 400, 'body must be a JSON object')
+    if (raw.version !== undefined) {
+      if (typeof raw.version.source !== 'string' || typeof raw.version.ref !== 'string') {
+        return sendError(res, 400, 'version { source, ref } is required')
+      }
+    }
+    const wasRunning = info.status.phase === 'running' || info.status.phase === 'starting'
+    if (wasRunning) await processes.stop(info)
+
+    const spec: EntitySpec = {
+      ...info.spec,
+      ...(raw.name !== undefined && typeof raw.name === 'string' && raw.name !== '' ? { name: raw.name } : {}),
+      ...(raw.version !== undefined ? { version: { source: raw.version.source, ref: raw.version.ref } } : {}),
+      ...(raw.profile !== undefined && typeof raw.profile === 'string' ? { profile: raw.profile } : {}),
+      ...(raw.port !== undefined && typeof raw.port === 'number' ? { port: raw.port } : {}),
+      ...(raw.args !== undefined && Array.isArray(raw.args) ? { args: raw.args } : {}),
+      ...(raw.env !== undefined && raw.env !== null && typeof raw.env === 'object'
+        ? { env: { ...info.spec.env, ...raw.env } }
+        : {}),
+    }
+    const updated = store.upsert(spec)
+    if (wasRunning && raw.restart !== false) {
+      try {
+        const restarted = await processes.start(updated)
+        return sendJson(res, 200, restarted)
+      } catch (error) {
+        return sendJson(res, 200, {
+          ...updated,
+          status: { ...updated.status, phase: 'error', error: error instanceof Error ? error.message : String(error) },
+        })
+      }
+    }
+    sendJson(res, 200, updated)
+  })
+
   routes.set('GET /api/entities/{id}/logs', (_req, res, params) => {
     const info = entityOr404(res, store, params.id)
     if (!info) return
@@ -214,13 +257,28 @@ export function createManagerServer(options: ManagerServerOptions) {
     if (!raw || raw.source === undefined || typeof raw.ref !== 'string') {
       return sendError(res, 400, 'source and ref are required')
     }
+    const source = raw.source
+    const ref = raw.ref
     try {
-      const info = await versions.install(raw.source, raw.ref)
-      sendJson(res, 201, info)
+      const job = jobs.submit<VersionInfo>(
+        'version-install',
+        `install ${source} ${ref}`,
+        () => versions.install(source!, ref),
+      )
+      sendJson(res, 202, job)
     } catch (error) {
-      if (error instanceof NotImplemented) return sendError(res, 501, error.message)
       return sendError(res, 500, error instanceof Error ? error.message : String(error))
     }
+  })
+
+  routes.set('GET /api/jobs', (_req, res) => {
+    sendJson(res, 200, jobs.list())
+  })
+
+  routes.set('GET /api/jobs/{id}', (_req, res, params) => {
+    const job = params.id ? jobs.get(params.id) : undefined
+    if (!job) return sendError(res, 404, `job ${params.id ?? ''} not found`)
+    sendJson(res, 200, job)
   })
 
   routes.set('POST /api/versions/register-local', async (req, res) => {

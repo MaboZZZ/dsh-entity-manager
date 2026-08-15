@@ -1,4 +1,11 @@
-import type { EntityInfo, HealthInfo, VersionInfo } from '@dshm/shared'
+import type {
+  CreateEntityRequest,
+  EntityInfo,
+  HealthInfo,
+  JobInfo,
+  UpdateEntityRequest,
+  VersionInfo,
+} from '@dshm/shared'
 
 const BASE = '/api'
 
@@ -28,6 +35,30 @@ export function getEntities(): Promise<EntityInfo[]> {
 
 export function getVersions(): Promise<VersionInfo[]> {
   return request<VersionInfo[]>('/versions')
+}
+
+export function getJobs(): Promise<JobInfo[]> {
+  return request<JobInfo[]>('/jobs')
+}
+
+export function createEntity(input: CreateEntityRequest): Promise<EntityInfo> {
+  return request<EntityInfo>('/entities', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function patchEntity(id: string, patch: UpdateEntityRequest): Promise<EntityInfo> {
+  return request<EntityInfo>(`/entities/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+export function getEntity(id: string): Promise<EntityInfo> {
+  return request<EntityInfo>(`/entities/${id}`)
 }
 
 export function startEntity(id: string): Promise<EntityInfo> {

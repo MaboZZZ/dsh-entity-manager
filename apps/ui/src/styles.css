@@ -71,3 +71,55 @@ body {
   max-height: 260px; white-space: pre-wrap; word-break: break-all;
 }
 details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 8px 0; }
+
+/* M1: wizard + detail */
+button.link {
+  background: none; border: none; color: var(--text); cursor: pointer;
+  font-size: inherit; padding: 0; text-align: left;
+}
+button.link:hover { color: var(--accent); }
+
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 8px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.form input, .form select {
+  background: #0c0e12; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; font-size: 14px;
+}
+.form-row { display: flex; gap: 12px; align-items: center; grid-column: 1 / -1; }
+.form-row button {
+  font-size: 13px; padding: 7px 16px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text);
+}
+
+.detail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.detail-head h2 { font-size: 18px; margin: 0; }
+.detail-head .actions { margin-left: auto; }
+
+.meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; margin: 12px 0; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; }
+
+.version-switch { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--border); }
+.version-switch select {
+  background: #0c0e12; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px;
+}
+.version-switch button {
+  font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--text);
+}
+.version-switch button:disabled { opacity: 0.4; cursor: default; }
+
+.gui-and-logs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 900px) { .gui-and-logs { grid-template-columns: 1fr; } }
+.gui iframe {
+  width: 100%; height: 520px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
+.gui .placeholder, .logs-pane .placeholder {
+  border: 1px dashed var(--border); border-radius: 8px; padding: 40px; text-align: center; color: var(--muted);
+}
+.subhead { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.logs-pane .logs { height: 520px; max-height: 520px; }
+
+.err-text { color: var(--err); font-size: 12px; }
+.phase.done { color: var(--ok); }
+.phase.failed { color: var(--err); }
