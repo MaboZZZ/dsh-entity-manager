@@ -87,7 +87,7 @@ export class VersionRegistry {
       case 'npm':
         return this.installNpm(ref)
       case 'git-tag':
-        throw new NotImplemented('git-tag version install (M3)')
+        return this.installGitTag(ref)
       case 'local':
         throw new NotImplemented('use registerLocal for local checkouts')
     }
@@ -167,6 +167,39 @@ export class VersionRegistry {
       semver: version,
       summary: `npm ${DSH_PACKAGE}@${version}`,
       launch: { nodeArgs: [], script, cwd: dir },
+    }
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
+    return this.toInfo(manifest, manifest)
+  }
+
+  /**
+   * Install from a git ref (tag, branch, or commit) of the DSH repository:
+   * shallow clone, checkout the ref, install dependencies with pnpm, then
+   * register like a local checkout. Heavy: run this as an async job.
+   */
+  private async installGitTag(ref: string): Promise<VersionInfo> {
+    const dir = join(this.versionsDir, ref)
+    if (this.readManifest(ref)) {
+      const existing = this.readManifest(ref)
+      if (existing) return this.toInfo(existing, existing)
+    }
+    mkdirSync(this.versionsDir, { recursive: true })
+    try {
+      await execFileAsync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', DSH_REPOSITORY, dir], { env: process.env })
+    } catch {
+      // ref is probably a commit sha or a branch that cannot be single-branch-cloned
+      await execFileAsync('git', ['clone', '--depth', '1', DSH_REPOSITORY, dir], { env: process.env })
+      await execFileAsync('git', ['-C', dir, 'checkout', ref], { env: process.env })
+    }
+    const script = join(dir, 'apps', 'cli', 'src', 'bin.ts')
+    if (!existsSync(script)) throw new Error(`git ref ${ref} has no apps/cli/src/bin.ts (not a DSH checkout?)`)
+    await execFileAsync('pnpm', ['install', '--frozen-lockfile'], { cwd: dir, env: process.env })
+    const manifest: InstalledManifest = {
+      ref,
+      source: 'git-tag',
+      installedAt: new Date().toISOString(),
+      summary: `git ${DSH_REPOSITORY} @ ${ref}`,
+      launch: { nodeArgs: ['--import', 'tsx/esm'], script, cwd: dir },
     }
     writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
     return this.toInfo(manifest, manifest)

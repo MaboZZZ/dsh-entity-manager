@@ -15,19 +15,23 @@
  *   POST   /api/versions/register-local { label, checkoutDir }
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createReadStream, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   ApiError,
   CreateEntityRequest,
   EntitySpec,
   HealthInfo,
+  ImportRequest,
   InstallVersionRequest,
   RegisterLocalRequest,
+  RestoreRequest,
   UpdateEntityRequest,
   VersionInfo,
 } from '@dshm/shared'
 import { JobRunner } from './jobs.ts'
 import { EntityStore } from './store.ts'
+import { SnapshotManager } from './snapshots.ts'
 import { EntityProcessManager } from './spawn.ts'
 import { NotImplemented, VersionRegistry } from './versions.ts'
 
@@ -111,6 +115,7 @@ function entityOr404(
 export function createManagerServer(options: ManagerServerOptions) {
   const store = new EntityStore(options.rootDir)
   const versions = new VersionRegistry(join(options.rootDir, 'versions'))
+  const snapshots = new SnapshotManager(options.rootDir)
   const jobs = new JobRunner()
   const processes = new EntityProcessManager(
     join(options.rootDir, 'homes'),
@@ -221,7 +226,7 @@ export function createManagerServer(options: ManagerServerOptions) {
       ...(raw.port !== undefined && typeof raw.port === 'number' ? { port: raw.port } : {}),
       ...(raw.args !== undefined && Array.isArray(raw.args) ? { args: raw.args } : {}),
       ...(raw.env !== undefined && raw.env !== null && typeof raw.env === 'object'
-        ? { env: { ...info.spec.env, ...raw.env } }
+        ? { env: raw.env }
         : {}),
     }
     const updated = store.upsert(spec)
@@ -245,6 +250,79 @@ export function createManagerServer(options: ManagerServerOptions) {
     const url = new URL(_req.url ?? '/', 'http://localhost')
     const lines = Math.max(1, Math.min(5000, Number(url.searchParams.get('lines') ?? 200) || 200))
     sendJson(res, 200, { id: info.spec.id, logs: processes.getLogs(info.spec.id, lines) })
+  })
+
+  routes.set('POST /api/entities/{id}/snapshot', async (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    try {
+      const snapshot = await snapshots.create(info)
+      sendJson(res, 201, snapshot)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('GET /api/entities/{id}/snapshots', (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    sendJson(res, 200, snapshots.list(info.spec.id))
+  })
+
+  routes.set('POST /api/entities/{id}/restore', async (req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    const raw = (await readJson(req)) as Partial<RestoreRequest> | undefined
+    if (!raw || typeof raw.snapshot !== 'string' || raw.snapshot === '') {
+      return sendError(res, 400, 'snapshot is required')
+    }
+    try {
+      if (info.status.phase === 'running' || info.status.phase === 'starting') {
+        await processes.stop(info)
+      }
+      const spec = snapshots.restore(info, raw.snapshot)
+      const updated = store.upsert({ ...spec, id: info.spec.id })
+      sendJson(res, 200, updated)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('GET /api/entities/{id}/export', async (_req, res, params) => {
+    const info = entityOr404(res, store, params.id)
+    if (!info) return
+    try {
+      const result = await snapshots.exportBundle(info)
+      sendJson(res, 200, result)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('POST /api/entities/import', async (req, res) => {
+    const raw = (await readJson(req)) as Partial<ImportRequest> | undefined
+    if (!raw || typeof raw.path !== 'string' || raw.path === '') {
+      return sendError(res, 400, 'path is required')
+    }
+    try {
+      const spec = await snapshots.importBundle(raw.path)
+      const info = store.upsert(spec)
+      sendJson(res, 201, info)
+    } catch (error) {
+      return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('GET /api/exports/{file}', (_req, res, params) => {
+    const file = params.file
+    if (!file || file.includes('/') || file.includes('..')) return sendError(res, 400, 'invalid file name')
+    const full = join(snapshots.exportsDir, file)
+    if (!existsSync(full)) return sendError(res, 404, `export ${file} not found`)
+    res.writeHead(200, {
+      'content-type': 'application/gzip',
+      'content-disposition': `attachment; filename="${file}"`,
+    })
+    createReadStream(full).pipe(res)
   })
 
   routes.set('GET /api/versions', async (_req, res) => {
@@ -311,7 +389,23 @@ export function createManagerServer(options: ManagerServerOptions) {
       match.names.forEach((name, index) => {
         params[name] = decodeURIComponent(result[index + 1] ?? '')
       })
-      return void handler(req, res, params)
+      try {
+        const result = handler(req, res, params)
+        if (result instanceof Promise) {
+          result.catch((error: unknown) => {
+            if (!res.headersSent) {
+              sendError(res, 500, error instanceof Error ? error.message : String(error))
+            }
+          })
+        }
+        return
+      } catch (error) {
+        // a throwing handler must never take the manager down
+        if (!res.headersSent) {
+          return sendError(res, 500, error instanceof Error ? error.message : String(error))
+        }
+        return
+      }
     }
     sendError(res, 404, `no route ${method} ${path}`)
   })

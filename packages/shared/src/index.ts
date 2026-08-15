@@ -126,6 +126,31 @@ export interface ApiError {
   error: string
 }
 
+/** One snapshot of an entity (spec + optional home tarball). */
+export interface SnapshotInfo {
+  id: string
+  entityId: string
+  createdAt: string
+  hasHome: boolean
+  spec: EntitySpec
+  sizeBytes: number
+}
+
+export interface RestoreRequest {
+  /** snapshot id (timestamp dir name) */
+  snapshot: string
+}
+
+export interface ExportResult {
+  path: string
+  sizeBytes: number
+}
+
+export interface ImportRequest {
+  /** absolute path of an exported bundle on the manager machine */
+  path: string
+}
+
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed'
 
 /** One async manager job (version installs etc.), as seen by the UI. */

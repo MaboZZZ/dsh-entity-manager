@@ -1,8 +1,10 @@
 import type {
   CreateEntityRequest,
   EntityInfo,
+  ExportResult,
   HealthInfo,
   JobInfo,
+  SnapshotInfo,
   UpdateEntityRequest,
   VersionInfo,
 } from '@dshm/shared'
@@ -90,5 +92,33 @@ export function registerLocal(label: string, checkoutDir: string): Promise<Versi
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ label, checkoutDir }),
+  })
+}
+
+export function createSnapshot(id: string): Promise<SnapshotInfo> {
+  return request<SnapshotInfo>(`/entities/${id}/snapshot`, { method: 'POST' })
+}
+
+export function listSnapshots(id: string): Promise<SnapshotInfo[]> {
+  return request<SnapshotInfo[]>(`/entities/${id}/snapshots`)
+}
+
+export function restoreSnapshot(id: string, snapshot: string): Promise<EntityInfo> {
+  return request<EntityInfo>(`/entities/${id}/restore`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ snapshot }),
+  })
+}
+
+export function exportEntity(id: string): Promise<ExportResult> {
+  return request<ExportResult>(`/entities/${id}/export`)
+}
+
+export function importEntity(path: string): Promise<EntityInfo> {
+  return request<EntityInfo>('/entities/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path }),
   })
 }

@@ -123,3 +123,14 @@ button.link:hover { color: var(--accent); }
 .err-text { color: var(--err); font-size: 12px; }
 .phase.done { color: var(--ok); }
 .phase.failed { color: var(--err); }
+
+.snapshots { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.snap-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.snap-row button, .snap-row a {
+  font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: #22262f; color: var(--text); text-decoration: none;
+}
+.snap-row button:hover, .snap-row a:hover { border-color: var(--accent); }
+.snap-row .hidden { display: none; }
+.snap-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.snap-list li { display: flex; gap: 10px; align-items: center; font-size: 13px; }

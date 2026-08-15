@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { EntityInfo, HealthInfo, JobInfo, VersionInfo } from '@dshm/shared'
+import type { EntityInfo, HealthInfo, JobInfo, SnapshotInfo, VersionInfo } from '@dshm/shared'
 import {
   createEntity,
+  createSnapshot,
   deleteEntity,
+  exportEntity,
   getEntities,
   getHealth,
   getJobs,
   getLogs,
   getVersions,
+  importEntity,
   installVersion,
+  listSnapshots,
   patchEntity,
+  restoreSnapshot,
   startEntity,
   stopEntity,
 } from './api.ts'
@@ -114,6 +119,8 @@ export function App() {
 
             <CreateWizard versions={versions} onCreated={() => void refresh()} act={act} />
 
+            <ImportPanel act={act} onImported={() => void refresh()} />
+
             <VersionsPanel versions={versions} act={act} />
             <JobsPanel jobs={jobs} />
           </>
@@ -215,13 +222,16 @@ function DetailView(props: {
   const { entity, versions, onBack, onChanged, act } = props
   const [logs, setLogs] = useState('')
   const [switchRef, setSwitchRef] = useState('')
+  const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([])
+  const [exportPath, setExportPath] = useState<string | null>(null)
   const iframeKey = `${entity.spec.id}-${entity.status.port ?? 'off'}`
 
-  // live logs while the detail is open
+  // live logs + snapshots while the detail is open
   useEffect(() => {
     const timer = setInterval(() => {
       void getLogs(entity.spec.id, 400).then(({ logs }) => setLogs(logs)).catch(() => {})
     }, 2000)
+    void listSnapshots(entity.spec.id).then(setSnapshots).catch(() => {})
     return () => clearInterval(timer)
   }, [entity.spec.id])
 
@@ -275,6 +285,34 @@ function DetailView(props: {
         <span className="muted">data in the entity home stays untouched</span>
       </div>
 
+      <div className="snapshots">
+        <div className="subhead">Snapshots &amp; transfer</div>
+        <div className="snap-row">
+          <button onClick={() => void act('snapshotting', async () => {
+            await createSnapshot(entity.spec.id)
+            setSnapshots(await listSnapshots(entity.spec.id))
+          })}>take snapshot</button>
+          <button onClick={() => void act('exporting', async () => {
+            const result = await exportEntity(entity.spec.id)
+            setExportPath(result.path)
+          })}>export bundle</button>
+          <a href={`/api/exports/${exportPath?.split('/').pop() ?? ''}`} className={exportPath ? '' : 'hidden'} download>download bundle</a>
+        </div>
+        {snapshots.length > 0 && (
+          <ul className="snap-list">
+            {snapshots.map((snap) => (
+              <li key={snap.id}>
+                <span className="badge">{new Date(snap.createdAt).toLocaleString()}</span>
+                <span className="muted">{snap.hasHome ? `${snap.sizeBytes} B home` : 'spec only'}</span>
+                <button className="danger" onClick={() => void act('restoring', () => restoreSnapshot(entity.spec.id, snap.id))}>
+                  restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="gui-and-logs">
         <div className="gui">
           <div className="subhead">GUI{port === null ? ' (not running)' : ` — http://127.0.0.1:${port}/`}</div>
@@ -287,6 +325,41 @@ function DetailView(props: {
           <pre className="logs">{logs || '(waiting for output…)'}</pre>
         </div>
       </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function ImportPanel(props: {
+  act: (label: string, fn: () => Promise<unknown>) => Promise<void>
+  onImported: () => void
+}) {
+  const { act, onImported } = props
+  const [path, setPath] = useState('')
+  return (
+    <section className="panel">
+      <h2>Import entity bundle</h2>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!path.trim()) return
+          void act('importing', async () => {
+            await importEntity(path.trim())
+            setPath('')
+            onImported()
+          })
+        }}
+      >
+        <label>Bundle path on this machine
+          <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/path/to/entity-….tar.gz" required />
+        </label>
+        <div className="form-row">
+          <button type="submit">Import</button>
+          <span className="muted">creates a fresh entity with a new id and home</span>
+        </div>
+      </form>
     </section>
   )
 }
