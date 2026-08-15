@@ -187,12 +187,16 @@ export class VersionRegistry {
     // blob:none keeps the initial clone small (trees/commits only); blobs are
     // fetched on checkout, which tolerates flaky networks better than one big
     // transfer. Retry once on failure.
+    // Optional proxy: DSHM_GIT_PROXY=http://127.0.0.1:7897 (Clash etc.) — many
+    // China networks need this for stable GitHub access.
+    const proxy = process.env.DSHM_GIT_PROXY
+    const proxyArgs = proxy ? ['-c', `http.proxy=${proxy}`, '-c', `https.proxy=${proxy}`] : []
     const clone = async (args: string[]): Promise<void> => {
       try {
-        await execFileAsync('git', ['clone', '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
+        await execFileAsync('git', ['clone', ...proxyArgs, '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
       } catch (error) {
         rmSync(dir, { recursive: true, force: true })
-        await execFileAsync('git', ['clone', '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
+        await execFileAsync('git', ['clone', ...proxyArgs, '--depth', '1', '--filter=blob:none', ...args], { env: process.env })
       }
     }
     try {

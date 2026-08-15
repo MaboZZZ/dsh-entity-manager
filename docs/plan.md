@@ -102,6 +102,22 @@
 - "克隆实体" = 复制数据目录到新实体并 pin 新版本，旧实体原样保留；
 - 跨版本数据格式可能不兼容（rc 阶段），UI 对版本差异给出提示。
 
+## 6.2 M4 实测记录（2025-08）
+
+- Electron 壳：主进程内嵌管理器（4180 被占自动换口），渲染进程经 preload 桥
+  拿 managerUrl，实体子进程以 `ELECTRON_RUN_AS_NODE=1` 用 Electron 自带
+  Node 22.21 拉起；退出时停止全部实体；
+- 打包：electron-builder mac zip 成功，产物 .app 直接启动且内嵌管理器可用；
+  `app-builder-lib@26.15.3` 与 `@electron/get@3.0.0` 的 API 不兼容
+  （`ElectronDownloadCacheMode` 需 ≥3.1.0）→ pnpm override 强制 3.1.0；
+- git-tag 源：`--filter=blob:none` 轻量克隆 + 重试；本机 GitHub 直连不稳，
+  `DSHM_GIT_PROXY=http://127.0.0.1:7897`（Clash）后克隆秒级完成；
+  pnpm install 后注册为 local 式 launch。实测 master 分支快照因上游缺
+  `dsh-client-ui-directory-picker-native` 无法 boot——管理器正确捕获并归因
+  （错误状态 + 日志），属于 DSH master 活代码问题；稳定 tag 可用。
+- 网络经验：本机走 npmmirror（registry + electron 镜像）和 Clash 代理
+  （git）才稳定；已固化到 `.npmrc` 与 `DSHM_GIT_PROXY`。
+
 ## 6.1 M0 实测记录（2025-08）
 
 - `dsh --profile web --port <n>` + `DSH_HOME=<dir>` 是最小拉起面；`--host`
