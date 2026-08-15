@@ -17,6 +17,8 @@ export interface Job<T = unknown> {
   label: string
   result: T | null
   error: string | null
+  /** target ref for install jobs, e.g. "0.1.0-rc.6" */
+  target?: string
 }
 
 export class JobRunner {
@@ -27,7 +29,7 @@ export class JobRunner {
   constructor(private readonly concurrency = 1) {}
 
   /** Queue a job; returns immediately with the job id. */
-  submit<T>(kind: string, label: string, fn: () => Promise<T>): Job<T> {
+  submit<T>(kind: string, label: string, fn: () => Promise<T>, target?: string): Job<T> {
     const job: Job<T> = {
       id: randomUUID(),
       kind,
@@ -38,6 +40,7 @@ export class JobRunner {
       label,
       result: null,
       error: null,
+      ...(target !== undefined ? { target } : {}),
     }
     this.jobs.set(job.id, job as Job)
     this.queue.push({ job: job as Job, fn })

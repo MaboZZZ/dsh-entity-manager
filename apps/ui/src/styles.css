@@ -134,3 +134,31 @@ button.link:hover { color: var(--accent); }
 .snap-row .hidden { display: none; }
 .snap-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .snap-list li { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.version-row { position: relative; }
+.version-row .chevron {
+  margin-left: auto; background: none; border: none; color: var(--muted);
+  font-size: 14px; cursor: pointer; padding: 0 4px;
+}
+.version-row .chevron:hover { color: var(--accent); }
+.version-detail {
+  flex-basis: 100.version-row { position: relative; }
+.version-row .chevron {
+  margin-left: auto; background: none; border: none; color: var(--muted);
+  font-size: 14px; cursor: pointer; padding: 0 4px;
+}
+.version-row .chevron:hover { color: var(--accent); }
+.version-detail {
+  flex-basis: 100%; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; margin-top: 6px; font-size: 12px;
+  background: #0c0e12; border: 1px solid var(--border); border-radius: 6px;
+}
+.progress { height: 6px; border-radius: 3px; background: #22262f; overflow: hidden; }
+.progress-bar { height: 100%; border-radius: 3px; }
+.progress-bar.running {
+  width: 40%; background: var(--accent);
+  animation: dshm-slide 1.2s ease-in-out infinite;
+}
+@keyframes dshm-slide {
+  0% { margin-left: 0%; }
+  100% { margin-left: 60%; }
+}

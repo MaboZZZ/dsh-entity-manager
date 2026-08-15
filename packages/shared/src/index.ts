@@ -165,6 +165,8 @@ export interface JobInfo {
   startedAt: string | null
   finishedAt: string | null
   error: string | null
+  /** target ref for install jobs, e.g. "0.1.0-rc.6" */
+  target?: string
 }
 
 export interface HealthInfo {

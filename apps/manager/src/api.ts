@@ -343,6 +343,7 @@ export function createManagerServer(options: ManagerServerOptions) {
         'version-install',
         `install ${source} ${ref}`,
         () => versions.install(source!, ref),
+        ref,
       )
       sendJson(res, 202, job)
     } catch (error) {

@@ -123,8 +123,7 @@ export function App() {
 
             <ImportPanel act={act} onImported={() => void refresh()} />
 
-            <VersionsPanel versions={versions} act={act} onRefresh={refresh} />
-            <JobsPanel jobs={jobs} />
+            <VersionsPanel versions={versions} jobs={jobs} act={act} onRefresh={refresh} />
           </>
         )}
     </div>
@@ -384,13 +383,22 @@ function ImportPanel(props: {
 
 function VersionsPanel(props: {
   versions: VersionInfo[]
+  jobs: JobInfo[]
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   onRefresh: () => Promise<unknown>
 }) {
-  const { versions, act, onRefresh } = props
+  const { versions, jobs, act, onRefresh } = props
   const [showAddLocal, setShowAddLocal] = useState(false)
   const [localLabel, setLocalLabel] = useState('')
   const [localPath, setLocalPath] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  // install jobs by target ref (one install at a time)
+  const installJobs = jobs.filter((j) => j.kind === 'version-install')
+  const activeInstall = installJobs.find((j) => j.status === 'pending' || j.status === 'running')
+  const jobFor = (ref: string): JobInfo | undefined =>
+    installJobs.find((j) => j.target === ref)
+
   return (
     <section className="panel">
       <div className="panel-head">
@@ -418,7 +426,7 @@ function VersionsPanel(props: {
           <label>Label
             <input value={localLabel} onChange={(e) => setLocalLabel(e.target.value)} placeholder="e.g. dev" required />
           </label>
-          <label>DSH checkout path on this machine
+          <label>本地 DSH 项目代码目录（checkout）
             <input value={localPath} onChange={(e) => setLocalPath(e.target.value)} placeholder="/path/to/deepseek-harness" required />
           </label>
           <div className="form-row">
@@ -428,22 +436,61 @@ function VersionsPanel(props: {
       )}
       {versions.length === 0 && <p className="muted">No versions found — try the refresh button, or add a local checkout.</p>}
       <ul className="cards">
-        {versions.map((version) => (
-          <li key={`${version.source}:${version.ref}`} className="card">
-            <strong>{version.ref}</strong>
-            <span className="badge">{version.source}</span>
-            {version.installed
-              ? <span className="badge ok">installed</span>
-              : (
-                <span className="actions">
-                  <span className="badge">available</span>
-                  <button onClick={() => void act('installing', () => installVersion('npm', version.ref))}>
-                    install
-                  </button>
-                </span>
+        {versions.map((version) => {
+          const job = jobFor(version.ref)
+          const isInstalling = job !== undefined && (job.status === 'pending' || job.status === 'running')
+          const open = expanded === version.ref
+          return (
+            <li key={`${version.source}:${version.ref}`} className="card version-row">
+              <strong>{version.ref}</strong>
+              <span className="badge">{version.source}</span>
+              {version.installed
+                ? <span className="badge ok">installed</span>
+                : (
+                  <span className="actions">
+                    <span className="badge">available</span>
+                    <button
+                      disabled={activeInstall !== undefined && !isInstalling}
+                      onClick={() => void act('installing', () => installVersion('npm', version.ref))}
+                    >
+                      {isInstalling ? 'installing…' : 'install'}
+                    </button>
+                  </span>
+                )}
+              {/* rightmost: chevron to expand install details */}
+              <button
+                className="chevron"
+                onClick={() => setExpanded(open ? null : version.ref)}
+                title={open ? 'collapse' : 'show install details'}
+              >
+                {open ? '▴' : '▾'}
+              </button>
+              {open && (
+                <div className="version-detail">
+                  {job && (job.status === 'pending' || job.status === 'running') && (
+                    <>
+                      <div className="progress"><div className="progress-bar running" /></div>
+                      <span className="muted">{job.status}… 安装中（一次只装一个版本）</span>
+                    </>
+                  )}
+                  {job && job.status === 'done' && <span className="badge ok">install done</span>}
+                  {job && job.status === 'failed' && (
+                    <span className="err-text">install failed: {job.error ?? 'unknown error'}</span>
+                  )}
+                  {version.installed && version.installDir && (
+                    <div className="muted">installed at: <code>{version.installDir}</code></div>
+                  )}
+                  {job && job.startedAt && (
+                    <div className="muted">
+                      started {new Date(job.startedAt).toLocaleTimeString()}
+                      {job.finishedAt ? ` · finished ${new Date(job.finishedAt).toLocaleTimeString()}` : ''}
+                    </div>
+                  )}
+                </div>
               )}
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
@@ -451,22 +498,3 @@ function VersionsPanel(props: {
 
 /* ------------------------------------------------------------------ */
 
-function JobsPanel(props: { jobs: JobInfo[] }) {
-  const { jobs } = props
-  const active = jobs.filter((j) => j.status === 'pending' || j.status === 'running')
-  if (active.length === 0 && jobs.length === 0) return null
-  return (
-    <section className="panel">
-      <h2>Jobs</h2>
-      <ul className="cards">
-        {(active.length > 0 ? active : jobs.slice(0, 5)).map((job) => (
-          <li key={job.id} className="card">
-            <span className={`phase ${job.status}`}>{job.status}</span>
-            <span>{job.label}</span>
-            {job.error && <span className="err-text">{job.error}</span>}
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
