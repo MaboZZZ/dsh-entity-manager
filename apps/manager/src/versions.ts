@@ -226,6 +226,9 @@ export class VersionRegistry {
       ...process.env,
       // Isolated cache: the system ~/.npm cache can be broken or root-owned.
       npm_config_cache: join(this.versionsDir, '.npm-cache'),
+      // Optional registry override (e.g. DSHM_NPM_REGISTRY=https://registry.npmmirror.com
+      // for faster installs on China networks); falls back to the environment.
+      ...(process.env.DSHM_NPM_REGISTRY ? { npm_config_registry: process.env.DSHM_NPM_REGISTRY } : {}),
     }
   }
 
