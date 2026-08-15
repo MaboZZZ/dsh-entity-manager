@@ -190,6 +190,7 @@ export class EntityProcessManager {
       this.children.delete(spec.id)
       this.logStreams.get(spec.id)?.end()
       this.logStreams.delete(spec.id)
+      console.error(`[dshm] spawn error for ${spec.id}:`, error instanceof Error ? error.message : String(error))
       this.store.patchStatus(spec.id, {
         phase: 'error', pid: null, startedAt: null,
         error: `failed to spawn process: ${error instanceof Error ? error.message : String(error)}`,
@@ -211,6 +212,12 @@ export class EntityProcessManager {
         })
       }
     })
+
+    // If the child failed to spawn (error event), surface the real error now
+    // instead of wasting the whole probe window.
+    await new Promise((resolvePromise) => setImmediate(resolvePromise))
+    const afterSpawn = this.store.get(spec.id)
+    if (afterSpawn?.status.phase === 'error') return this.require(spec.id)
 
     const ready = await waitForHttp(port, READY_TIMEOUT_MS)
     if (!ready) {

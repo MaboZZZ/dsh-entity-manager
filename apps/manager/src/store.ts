@@ -4,9 +4,13 @@
  * Single JSON document under the manager home (`entities.json`), written
  * atomically. Volatile status is persisted too so the UI can render last-known
  * state after a manager restart (a stale `running` is reconciled by the
- * process manager on boot in M1).
+ * process manager on boot).
+ *
+ * Multi-instance safety: before every read/mutation the store re-reads the
+ * file when its mtime changed on disk, so a second manager (or a second app
+ * instance sharing the same home) cannot silently clobber entities away.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { EntityInfo, EntitySpec, EntityStatus } from '@dshm/shared'
 
@@ -42,24 +46,29 @@ export class EntityStore {
   readonly rootDir: string
   private readonly file: string
   private data: ManagerStoreData
+  private lastMtime = 0
 
   constructor(rootDir: string) {
     this.rootDir = rootDir
     this.file = join(rootDir, ENTITIES_FILE)
     mkdirSync(rootDir, { recursive: true })
     this.data = load(this.file)
+    this.lastMtime = this.fileMtime()
   }
 
   list(): EntityInfo[] {
+    this.sync()
     return this.data.entities
   }
 
   get(id: string): EntityInfo | undefined {
+    this.sync()
     return this.data.entities.find((entity) => entity.spec.id === id)
   }
 
   /** Insert or replace the spec of an entity; existing status is kept. */
   upsert(spec: EntitySpec): EntityInfo {
+    this.sync()
     const existing = this.get(spec.id)
     const info: EntityInfo = {
       spec,
@@ -71,6 +80,7 @@ export class EntityStore {
   }
 
   remove(id: string): boolean {
+    this.sync()
     const before = this.data.entities.length
     this.data.entities = this.data.entities.filter((e) => e.spec.id !== id)
     if (this.data.entities.length === before) return false
@@ -80,11 +90,29 @@ export class EntityStore {
 
   /** Update just the status; the store never invents statuses on its own. */
   patchStatus(id: string, patch: Partial<EntityStatus>): EntityInfo | undefined {
+    this.sync()
     const info = this.get(id)
     if (!info) return undefined
     info.status = { ...info.status, ...patch }
     this.save()
     return info
+  }
+
+  private fileMtime(): number {
+    try {
+      return statSync(this.file).mtimeMs
+    } catch {
+      return 0
+    }
+  }
+
+  /** Re-read the file when another process changed it on disk. */
+  private sync(): void {
+    const mtime = this.fileMtime()
+    if (mtime !== 0 && mtime !== this.lastMtime) {
+      this.data = load(this.file)
+      this.lastMtime = mtime
+    }
   }
 
   private save(): void {
@@ -93,5 +121,6 @@ export class EntityStore {
     const tmp = join(dir, `${ENTITIES_FILE}.tmp`)
     writeFileSync(tmp, JSON.stringify(this.data, null, 2) + '\n', 'utf8')
     renameSync(tmp, this.file)
+    this.lastMtime = this.fileMtime()
   }
 }

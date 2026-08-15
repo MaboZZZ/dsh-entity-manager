@@ -132,9 +132,32 @@ export class VersionRegistry {
    * Read from disk each time so a version installed after the manager boot
    * is immediately usable.
    */
+  /**
+   * Resolve a pin to launch info, or throw VersionNotInstalled.
+   * For npm / git-tag versions the launch paths are derived from the CURRENT
+   * version directory (manifests may carry stale absolute paths after a
+   * version-directory migration); local checkouts use their stored absolute
+   * paths (they live outside the version store).
+   */
   resolve(pin: { source: VersionSourceKind; ref: string }): VersionLaunch {
     const manifest = this.readManifest(pin.ref)
     if (!manifest || manifest.source !== pin.source) throw new VersionNotInstalled(pin.ref)
+    const dir = join(this.dir, pin.ref)
+    if (pin.source === 'npm') {
+      return {
+        nodeArgs: [],
+        script: join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+        cwd: dir,
+      }
+    }
+    if (pin.source === 'git-tag') {
+      return {
+        nodeArgs: ['--import', 'tsx/esm'],
+        script: join(dir, 'apps', 'cli', 'src', 'bin.ts'),
+        cwd: dir,
+      }
+    }
+    // local checkout: stored absolute paths (validated at registration)
     return manifest.launch
   }
 

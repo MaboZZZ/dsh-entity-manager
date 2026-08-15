@@ -425,40 +425,25 @@ function ImportPanel(props: {
   t: T
 }) {
   const { act, onImported, t } = props
-  const [path, setPath] = useState('')
 
-  const chooseBundle = async () => {
+  const doImport = async () => {
     const file = await pickFile(t('pickFileTitle'))
-    if (file) setPath(file)
+    if (!file) return
+    await act(t('importingBusy'), async () => {
+      await importEntity(file)
+      onImported()
+    })
   }
 
   return (
     <section className="panel">
-      <h2>{t('importBundle')}</h2>
-      <div className="form">
-        <label>{t('bundlePath')}
-          <div className="dir-pick">
-            <code className="pick-value">{path || t('chooseBundleFile')}</code>
-            <button type="button" onClick={() => void chooseBundle()}>{t('chooseBundleFile')}</button>
-          </div>
-        </label>
-        <div className="form-row">
-          <button
-            disabled={!path}
-            onClick={() => {
-              if (!path) return
-              void act(t('importingBusy'), async () => {
-                await importEntity(path)
-                setPath('')
-                onImported()
-              })
-            }}
-          >
-            {t('import')}
-          </button>
-          <span className="muted">{t('createsFresh')}</span>
-        </div>
+      <div className="panel-head">
+        <h2>{t('importBundle')}</h2>
+        <span className="actions">
+          <button onClick={() => void doImport()}>{t('import')}</button>
+        </span>
       </div>
+      <p className="muted">{t('createsFresh')} — {t('chooseBundleFile')}</p>
     </section>
   )
 }

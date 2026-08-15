@@ -126,6 +126,21 @@ async function stopEntities(): Promise<void> {
   }
 }
 
+// Single-instance lock: two app instances sharing one DSH home would clobber
+// each other's entities.json ("entity disappeared from the store").
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 void app.whenReady().then(async () => {
   managerUrl = await startManager()
   ipcMain.on('dshm:manager-url-sync', (event) => {
