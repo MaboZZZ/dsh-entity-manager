@@ -303,6 +303,31 @@ export class EntityProcessManager {
     return this.require(spec.id)
   }
 
+  /**
+   * Stop EVERY entity instance — regardless of whether the user stopped some
+   * manually. Covers all live child processes (children map) plus any running
+   * container-isolation entities. Called on app/manager shutdown so no DSH
+   * process or container survives the app closing.
+   */
+  async stopAll(): Promise<void> {
+    const ids = new Set<string>()
+    for (const id of this.children.keys()) ids.add(id)
+    for (const entity of this.store.list()) {
+      if (entity.spec.isolation === 'container') {
+        if (await containerIsRunning(entity.spec.id)) ids.add(entity.spec.id)
+      }
+    }
+    for (const id of ids) {
+      const entity = this.store.get(id)
+      if (!entity) continue
+      try {
+        await this.stop(entity)
+      } catch (error) {
+        console.error(`[dshm] stopAll: stop ${id} failed:`, error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
+
   /** Last `lines` of the entity's log (process log file or docker logs). */
   async getLogs(entityId: string, lines = 200): Promise<string> {
     const entity = this.store.get(entityId)

@@ -116,14 +116,7 @@ function createTray(): void {
 
 async function stopEntities(): Promise<void> {
   if (!manager) return
-  const running = manager.store.list().filter((e) => e.status.phase === 'running' || e.status.phase === 'starting')
-  for (const entity of running) {
-    try {
-      await manager.processes.stop(entity)
-    } catch {
-      // best effort on quit
-    }
-  }
+  await manager.processes.stopAll()
 }
 
 // Single-instance lock: two app instances sharing one DSH home would clobber
@@ -176,13 +169,19 @@ void app.whenReady().then(async () => {
 })
 
 app.on('before-quit', (event) => {
-  // give entities a moment to stop; do not block quit indefinitely
+  // Close every entity instance (running, starting, or merely alive) so no
+  // DSH process/container survives the app closing. Timeout guards the quit.
   event.preventDefault()
+  const quit = () => app.exit(0)
+  const timer = setTimeout(quit, 30_000)
   void stopEntities().finally(() => {
-    app.exit(0)
+    clearTimeout(timer)
+    quit()
   })
 })
 
+// Closing the last window fully quits the app on every platform, which then
+// stops all entity instances (before-quit above).
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
