@@ -155,6 +155,12 @@ export interface ImportRequest {
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed'
 
+/** Fine-grained progress of an async job, shown in the UI. */
+export interface JobProgressInfo {
+  percent: number
+  label: string
+}
+
 /** One async manager job (version installs etc.), as seen by the UI. */
 export interface JobInfo {
   id: string
@@ -167,6 +173,8 @@ export interface JobInfo {
   error: string | null
   /** target ref for install jobs, e.g. "0.1.0-rc.6" */
   target?: string
+  /** progress while running */
+  progress: JobProgressInfo | null
 }
 
 export interface HealthInfo {

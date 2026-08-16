@@ -5,6 +5,7 @@ import {
   createEntity,
   createSnapshot,
   deleteEntity,
+  deleteVersion,
   exportAllEntities,
   exportEntityTo,
   getEntities,
@@ -573,38 +574,56 @@ function VersionsPanel(props: {
         {versions.map((version) => {
           const job = jobFor(version.ref)
           const isInstalling = job !== undefined && (job.status === 'pending' || job.status === 'running')
+          const pct = job?.progress?.percent ?? 0
+          const doDelete = () => {
+            if (!version.installed || isInstalling) return
+            const ok = window.confirm(`${t('deleteVersion')}: ${version.ref}?`)
+            if (!ok) return
+            void act(t('deletingBusy'), async () => {
+              try {
+                await deleteVersion(version.source, version.ref)
+                await onRefresh()
+              } catch (reason) {
+                onNotice(reason instanceof Error ? reason.message : String(reason))
+              }
+            })
+          }
           return (
             <li key={`${version.source}:${version.ref}`} className="card version-row">
-              <strong>{version.ref}</strong>
+              <strong className="v-name">{version.ref}</strong>
               <span className="badge">{version.source}</span>
               <div className="version-middle">
-                {isInstalling && (
+                {isInstalling && job?.progress && (
                   <>
-                    <div className="progress"><div className="progress-bar running" /></div>
-                    <span className="muted">{t('installing')} · {t('installingOne')}</span>
+                    <div className="progress">
+                      <div className="progress-bar" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="muted">{pct}% · {job.progress.label}</span>
                   </>
                 )}
                 {job?.status === 'failed' && (
                   <span className="err-text">{t('installFailed')}: {job.error ?? 'unknown error'}</span>
                 )}
                 {!isInstalling && version.installed && version.installDir && (
-                  <code className="muted">{version.installDir}</code>
+                  <code className="muted ellipsis" title={version.installDir}>{version.installDir}</code>
                 )}
               </div>
               <span className="version-status">
                 {version.installed
                   ? <span className="badge ok">{t('installed')}</span>
-                  : (
-                    <>
-                      <span className="badge">{t('available')}</span>
-                      <button
-                        disabled={activeInstall !== undefined && !isInstalling}
-                        onClick={() => void act(t('installingBusy'), () => installVersion('npm', version.ref))}
-                      >
-                        {isInstalling ? t('installing') : t('install')}
-                      </button>
-                    </>
-                  )}
+                  : <span className="badge">{t('available')}</span>}
+                {!version.installed && !isInstalling && (
+                  <button
+                    disabled={activeInstall !== undefined}
+                    onClick={() => void act(t('installingBusy'), () => installVersion('npm', version.ref))}
+                  >
+                    {t('install')}
+                  </button>
+                )}
+                {version.installed && !isInstalling && (
+                  <button className="danger" onClick={doDelete}>{t('delete')}</button>
+                )}
+                {isInstalling && <span className="muted">{pct}%</span>}
               </span>
             </li>
           )

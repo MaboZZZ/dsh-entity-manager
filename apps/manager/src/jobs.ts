@@ -1,10 +1,16 @@
 /**
  * Async job runner: long operations (npm installs) run off the request path,
- * and the API reports their status by id.
+ * and the API reports their status (and progress) by id.
  */
 import { randomUUID } from 'node:crypto'
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed'
+
+/** Fine-grained progress reported by the job body. */
+export interface JobProgress {
+  percent: number
+  label: string
+}
 
 export interface Job<T = unknown> {
   id: string
@@ -19,17 +25,22 @@ export interface Job<T = unknown> {
   error: string | null
   /** target ref for install jobs, e.g. "0.1.0-rc.6" */
   target?: string
+  /** progress while running */
+  progress: JobProgress | null
 }
+
+/** Callback the job body uses to report progress. */
+export type ProgressReporter = (percent: number, label: string) => void
 
 export class JobRunner {
   private readonly jobs = new Map<string, Job>()
-  private readonly queue: Array<{ job: Job; fn: () => Promise<unknown> }> = []
+  private readonly queue: Array<{ job: Job; fn: (report: ProgressReporter) => Promise<unknown> }> = []
   private running = 0
 
   constructor(private readonly concurrency = 1) {}
 
   /** Queue a job; returns immediately with the job id. */
-  submit<T>(kind: string, label: string, fn: () => Promise<T>, target?: string): Job<T> {
+  submit<T>(kind: string, label: string, fn: (report: ProgressReporter) => Promise<T>, target?: string): Job<T> {
     const job: Job<T> = {
       id: randomUUID(),
       kind,
@@ -40,6 +51,7 @@ export class JobRunner {
       label,
       result: null,
       error: null,
+      progress: null,
       ...(target !== undefined ? { target } : {}),
     }
     this.jobs.set(job.id, job as Job)
@@ -64,8 +76,11 @@ export class JobRunner {
       const { job, fn } = next
       job.status = 'running'
       job.startedAt = new Date().toISOString()
+      const report: ProgressReporter = (percent, label) => {
+        job.progress = { percent: Math.max(0, Math.min(100, percent)), label }
+      }
       try {
-        job.result = (await fn()) as unknown
+        job.result = (await fn(report)) as unknown
         job.status = 'done'
       } catch (error) {
         job.status = 'failed'

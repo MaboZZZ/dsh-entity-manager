@@ -183,3 +183,11 @@ export function updateSettings(versionsDir: string): Promise<{ versionsDir: stri
     body: JSON.stringify({ versionsDir }),
   })
 }
+
+export function deleteVersion(source: string, ref: string): Promise<{ deleted: string }> {
+  return request<{ deleted: string }>('/versions/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source, ref }),
+  })
+}

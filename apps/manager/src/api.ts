@@ -389,12 +389,29 @@ export function createManagerServer(options: ManagerServerOptions) {
       const job = jobs.submit<VersionInfo>(
         'version-install',
         `install ${source} ${ref}`,
-        () => versions.install(source!, ref),
+        (report) => versions.install(source!, ref, report),
         ref,
       )
       sendJson(res, 202, job)
     } catch (error) {
       return sendError(res, 500, error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  routes.set('POST /api/versions/delete', async (req, res) => {
+    const raw = (await readJson(req)) as Partial<InstallVersionRequest> | undefined
+    if (!raw || raw.source === undefined || typeof raw.ref !== 'string') {
+      return sendError(res, 400, 'source and ref are required')
+    }
+    const referenced = store
+      .list()
+      .filter((e) => e.spec.version.source === raw.source && e.spec.version.ref === raw.ref)
+      .map((e) => e.spec.name)
+    try {
+      await versions.deleteVersion(raw.source, raw.ref, referenced)
+      sendJson(res, 200, { deleted: raw.ref })
+    } catch (error) {
+      return sendError(res, 409, error instanceof Error ? error.message : String(error))
     }
   })
 

@@ -9,7 +9,7 @@
  *  - local source: registration of a DSH source-tree checkout (validated).
  *  - git-tag source: planned for M3.
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -89,10 +89,10 @@ export class VersionRegistry {
     return out
   }
 
-  async install(source: VersionSourceKind, ref: string): Promise<VersionInfo> {
+  async install(source: VersionSourceKind, ref: string, report?: (p: number, label: string) => void): Promise<VersionInfo> {
     switch (source) {
       case 'npm':
-        return this.installNpm(ref)
+        return this.installNpm(ref, report)
       case 'git-tag':
         return this.installGitTag(ref)
       case 'local':
@@ -161,7 +161,7 @@ export class VersionRegistry {
     return manifest.launch
   }
 
-  private async installNpm(version: string): Promise<VersionInfo> {
+  private async installNpm(version: string, report?: (p: number, label: string) => void): Promise<VersionInfo> {
     if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
       throw new Error(`invalid npm version string: ${JSON.stringify(version)}`)
     }
@@ -183,10 +183,7 @@ export class VersionRegistry {
     )
     // --ignore-scripts: never run install scripts from the registry.
     const npm = await resolveNpm()
-    await execFileAsync(npm.cmd, [...npm.prefix, 'install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
-      cwd: dir,
-      env: this.npmEnv(),
-    })
+    await this.runNpmInstall(dir, npm, report ?? (() => {}))
     const script = join(dir, 'node_modules', DSH_PACKAGE, 'lib', 'bin.js')
     if (!existsSync(script)) {
       throw new Error(`npm install finished but ${script} is missing`)
@@ -250,6 +247,99 @@ export class VersionRegistry {
     }
     writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
     return this.toInfo(manifest, manifest)
+  }
+
+  /**
+   * Run `npm install` reporting accurate progress.
+   *
+   * Approach: first `npm install --package-lock-only` (no download, fast)
+   * resolves the full dependency tree — the package count is the work target.
+   * The real install then reports progress from how many tarballs have landed
+   * in the isolated npm cache (content-v2) vs that target. Phases map to
+   * 0-8% resolve → 8-90% fetch → 95% reify → 100%.
+   */
+  private async runNpmInstall(
+    dir: string,
+    npm: { cmd: string; prefix: string[] },
+    report: (p: number, label: string) => void,
+  ): Promise<void> {
+    const env = this.npmEnv()
+    report(3, '正在解析依赖…')
+    await execFileAsync(
+      npm.cmd,
+      [...npm.prefix, 'install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: dir, env },
+    )
+    let total = 0
+    try {
+      const lock = JSON.parse(readFileSync(join(dir, 'package-lock.json'), 'utf8')) as { packages?: Record<string, unknown> }
+      total = Math.max(0, Object.keys(lock.packages ?? {}).length - 1) // minus the root project
+    } catch {
+      total = 0
+    }
+    report(8, total > 0 ? `待下载 ${total} 个依赖包` : '开始下载依赖…')
+
+    // Count tarballs already in the isolated cache (shared across versions).
+    const cacheContent = join(this.dir, '.npm-cache', '_cacache', 'content-v2')
+    const countFiles = (): number => {
+      let n = 0
+      const walk = (p: string): void => {
+        let entries: Array<{ isDirectory(): boolean; name: string }>
+        try {
+          entries = readdirSync(p, { withFileTypes: true }) as unknown as Array<{ isDirectory(): boolean; name: string }>
+        } catch {
+          return
+        }
+        for (const e of entries) {
+          if (e.isDirectory()) walk(join(p, e.name))
+          else n += 1
+        }
+      }
+      walk(cacheContent)
+      return n
+    }
+    const base = countFiles()
+
+    await new Promise<void>((resolvePromise, reject) => {
+      const child = spawn(npm.cmd, [...npm.prefix, 'install', '--no-audit', '--no-fund', '--loglevel=error', '--ignore-scripts'], {
+        cwd: dir,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let stderr = ''
+      child.stderr?.on('data', (d: Buffer) => { stderr += String(d) })
+      const timer = setInterval(() => {
+        if (total <= 0) return
+        const fetched = Math.min(total, countFiles() - base)
+        report(8 + Math.round(82 * (fetched / total)), `下载依赖 ${fetched}/${total}`)
+      }, 600)
+      child.on('error', reject)
+      child.on('exit', (code) => {
+        clearInterval(timer)
+        if (code === 0) {
+          report(95, '正在安装…')
+          resolvePromise()
+        } else {
+          reject(new Error(stderr.trim().slice(0, 500) || `npm install exited with code ${code}`))
+        }
+      })
+    })
+    report(100, '安装完成')
+  }
+
+  /**
+   * Delete an installed version. Refused when any entity still pins it.
+   * Removes the version directory (and best-effort the container image).
+   */
+  async deleteVersion(source: VersionSourceKind, ref: string, referencedBy: string[]): Promise<void> {
+    if (referencedBy.length > 0) {
+      throw new Error(`version ${ref} is still used by entity: ${referencedBy.join(', ')}`)
+    }
+    const dir = join(this.dir, ref)
+    if (!existsSync(dir)) throw new Error(`version ${ref} is not installed`)
+    rmSync(dir, { recursive: true, force: true })
+    // best effort: drop the container image for this version if it exists
+    execFileAsync('docker', ['rmi', `dsh-entity-manager:${ref.replace(/[^a-zA-Z0-9._-]/g, '-')}`]).catch(() => {})
   }
 
   private npmEnv(): NodeJS.ProcessEnv {
