@@ -39,6 +39,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [detail, setDetail] = useState<EntityInfo | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const refresh = useCallback(async () => {
     const [h, e, v, j] = await Promise.all([getHealth(), getEntities(), getVersions(), getJobs()])
@@ -145,6 +146,7 @@ export function App() {
               <div className="panel-head">
                 <h2>{t('entities')}</h2>
                 <span className="actions">
+                  <button className="btn-secondary" onClick={() => setShowCreate(true)}>+ {t('newEntity')}</button>
                   <button className="btn-secondary" onClick={() => void act(t('entitiesDirBusy'), changeEntitiesDir)}>{t('entitiesDir')}</button>
                   {entities.length > 0 && (
                     <button className="btn-secondary" onClick={() => void act(t('exportAllBusy'), exportAllWithDir)}>{t('exportAll')}</button>
@@ -185,7 +187,11 @@ export function App() {
                 )}
             </section>
 
-            <CreateWizard versions={versions} onCreated={() => void refresh()} act={act} t={t} />
+            {showCreate && (
+              <Modal title={t('newEntity')} onClose={() => setShowCreate(false)}>
+                <CreateWizard versions={versions} onCreated={() => void refresh()} onClose={() => setShowCreate(false)} act={act} t={t} />
+              </Modal>
+            )}
 
             <ImportPanel act={act} onImported={() => void refresh()} t={t} />
 
@@ -203,11 +209,11 @@ type T = ReturnType<typeof useLang>['t']
 function CreateWizard(props: {
   versions: VersionInfo[]
   onCreated: () => void
+  onClose: () => void
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>
   t: T
 }) {
-  const { versions, onCreated, act, t } = props
-  const [open, setOpen] = useState(false)
+  const { versions, onCreated, onClose, act, t } = props
   const [name, setName] = useState('')
   const [ref, setRef] = useState('')
   const [profile, setProfile] = useState('web')
@@ -237,57 +243,51 @@ function CreateWizard(props: {
       setName('')
       setApiKey('')
       setBaseUrl('')
-      setOpen(false)
+      onClose()
       onCreated()
     })
   }
 
   return (
-    <section className="panel">
-      <h2>
-        <button className="link" onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} {t('newEntity')}</button>
-      </h2>
-      {open && (
-        <form className="form" onSubmit={(e) => { e.preventDefault(); submit() }}>
-          <label>{t('name')}
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. sandbox" required />
-          </label>
-          <label>{t('version')}
-            <select value={ref} onChange={(e) => setRef(e.target.value)} required>
-              <option value="" disabled>{t('pickVersion')}</option>
-              {versionOptions.map((v) => (
-                <option key={`${v.source}:${v.ref}`} value={v.ref}>
-                  {v.ref}{v.installed ? '' : t('needsInstall')}{v.source === 'local' ? t('localTag') : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>{t('profile')}
-            <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-              <option value="web">{t('webProfile')}</option>
-              <option value="headless">{t('headlessProfile')}</option>
-            </select>
-          </label>
-          <label>{t('isolation')}
-            <select value={isolation} onChange={(e) => setIsolation(e.target.value)}>
-              <option value="process">{t('processIso')}</option>
-              <option value="sandbox">{t('sandboxIso')}</option>
-              <option value="container">{t('containerIso')}</option>
-            </select>
-          </label>
-          <label>{t('apiKey')} <span className="muted">{t('optional')}</span>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
-          </label>
-          <label>{t('baseUrl')} <span className="muted">{t('optional')}</span>
-            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
-          </label>
-          <div className="form-row">
-            <button type="submit">{t('createEntity')}</button>
-            <span className="muted">{t('portAuto')}</span>
-          </div>
-        </form>
-      )}
-    </section>
+    <>
+      <label>{t('name')}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. sandbox" autoFocus />
+      </label>
+      <label>{t('version')}
+        <select value={ref} onChange={(e) => setRef(e.target.value)}>
+          <option value="" disabled>{t('pickVersion')}</option>
+          {versionOptions.map((v) => (
+            <option key={`${v.source}:${v.ref}`} value={v.ref}>
+              {v.ref}{v.installed ? '' : t('needsInstall')}{v.source === 'local' ? t('localTag') : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>{t('profile')}
+        <select value={profile} onChange={(e) => setProfile(e.target.value)}>
+          <option value="web">{t('webProfile')}</option>
+          <option value="headless">{t('headlessProfile')}</option>
+        </select>
+      </label>
+      <label>{t('isolation')}
+        <select value={isolation} onChange={(e) => setIsolation(e.target.value)}>
+          <option value="process">{t('processIso')}</option>
+          <option value="sandbox">{t('sandboxIso')}</option>
+          <option value="container">{t('containerIso')}</option>
+        </select>
+      </label>
+      <label>{t('apiKey')} <span className="muted">{t('optional')}</span>
+        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
+      </label>
+      <label>{t('baseUrl')} <span className="muted">{t('optional')}</span>
+        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" />
+      </label>
+      <span className="muted">{t('portAuto')}</span>
+      <div className="modal-footer">
+        <button className="btn-secondary" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn-primary" disabled={!name.trim() || !ref} onClick={submit}>{t('createEntity')}</button>
+      </div>
+    </>
   )
 }
 
