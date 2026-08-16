@@ -170,17 +170,20 @@ export function importEntity(path: string): Promise<EntityInfo> {
   })
 }
 
-export interface SettingsInfo { versionsDir: string }
+export interface SettingsInfo { versionsDir: string; entitiesDir: string }
+
+export interface UpdateSettingsInput { versionsDir?: string; entitiesDir?: string }
+export interface UpdateSettingsResult { versionsDir?: string; entitiesDir?: string; moved?: string[]; errors?: string[] }
 
 export function getSettings(): Promise<SettingsInfo> {
   return request<SettingsInfo>('/settings')
 }
 
-export function updateSettings(versionsDir: string): Promise<{ versionsDir: string; moved: string[]; errors: string[] }> {
-  return request<{ versionsDir: string; moved: string[]; errors: string[] }>('/settings', {
+export function updateSettings(input: UpdateSettingsInput): Promise<UpdateSettingsResult> {
+  return request<UpdateSettingsResult>('/settings', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ versionsDir }),
+    body: JSON.stringify(input),
   })
 }
 

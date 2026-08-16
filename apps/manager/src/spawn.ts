@@ -89,7 +89,8 @@ export class EntityProcessManager {
   private readonly logStreams = new Map<string, ReturnType<typeof createWriteStream>>()
 
   constructor(
-    readonly homesDir: string,
+    /** dynamic: the user can re-point the entity data directory via settings */
+    readonly getHomesDir: () => string,
     readonly logsDir: string,
     private readonly versions: VersionRegistry,
     private readonly store: EntityStore,

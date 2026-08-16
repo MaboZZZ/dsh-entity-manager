@@ -120,7 +120,7 @@ export function createManagerServer(options: ManagerServerOptions) {
   const snapshots = new SnapshotManager(options.rootDir)
   const jobs = new JobRunner()
   const processes = new EntityProcessManager(
-    join(options.rootDir, 'homes'),
+    () => settings.entitiesDir,
     join(options.rootDir, 'logs'),
     versions,
     store,
@@ -147,16 +147,38 @@ export function createManagerServer(options: ManagerServerOptions) {
   })
 
   routes.set('GET /api/settings', (_req, res) => {
-    sendJson(res, 200, { versionsDir: settings.versionsDir })
+    sendJson(res, 200, { versionsDir: settings.versionsDir, entitiesDir: settings.entitiesDir })
   })
 
   routes.set('PUT /api/settings', async (req, res) => {
-    const raw = (await readJson(req)) as { versionsDir?: string } | undefined
-    if (!raw || typeof raw.versionsDir !== 'string' || raw.versionsDir.trim() === '') {
-      return sendError(res, 400, 'versionsDir is required')
+    const raw = (await readJson(req)) as { versionsDir?: string; entitiesDir?: string } | undefined
+    if (!raw || typeof raw !== 'object') return sendError(res, 400, 'body must be a JSON object')
+    if (raw.versionsDir !== undefined && typeof raw.versionsDir !== 'string') {
+      return sendError(res, 400, 'versionsDir must be a string')
+    }
+    if (raw.entitiesDir !== undefined && typeof raw.entitiesDir !== 'string') {
+      return sendError(res, 400, 'entitiesDir must be a string')
     }
     try {
-      const result = settings.setVersionsDir(raw.versionsDir)
+      const result: Record<string, unknown> = {}
+      if (raw.versionsDir !== undefined && raw.versionsDir.trim() !== '') {
+        Object.assign(result, settings.setVersionsDir(raw.versionsDir))
+      }
+      if (raw.entitiesDir !== undefined && raw.entitiesDir.trim() !== '') {
+        const running = store.list().filter((e) => e.status.phase === 'running' || e.status.phase === 'starting')
+        if (running.length > 0) {
+          return sendError(res, 409, `请先停止所有实体再修改存储位置（正在运行: ${running.map((e) => e.spec.name).join(', ')}）`)
+        }
+        const oldEntitiesDir = settings.entitiesDir
+        Object.assign(result, settings.setEntitiesDir(raw.entitiesDir))
+        // rewrite homeDir of entities that lived under the old homes dir
+        const sep = oldEntitiesDir.endsWith('/') || oldEntitiesDir.endsWith('\\') ? '' : '/'
+        for (const entity of store.list()) {
+          if (entity.spec.homeDir.startsWith(oldEntitiesDir + sep)) {
+            store.upsert({ ...entity.spec, homeDir: join(settings.entitiesDir, entity.spec.homeDir.slice(oldEntitiesDir.length + 1)) })
+          }
+        }
+      }
       sendJson(res, 200, result)
     } catch (error) {
       return sendError(res, 400, error instanceof Error ? error.message : String(error))
@@ -179,7 +201,7 @@ export function createManagerServer(options: ManagerServerOptions) {
       profile: raw.profile ?? 'web',
       port: typeof raw.port === 'number' ? raw.port : 0,
       isolation: raw.isolation ?? 'process',
-      homeDir: raw.homeDir ?? join(options.rootDir, 'homes', id),
+      homeDir: raw.homeDir ?? join(settings.entitiesDir, id),
       args: raw.args ?? [],
       env: raw.env ?? {},
       createdAt: new Date().toISOString(),

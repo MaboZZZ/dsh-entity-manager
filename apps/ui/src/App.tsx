@@ -97,6 +97,22 @@ export function App() {
     return result.exported.length > 0 ? result.exported[0]!.path : null
   }, [t])
 
+  const changeEntitiesDir = useCallback(async (): Promise<void> => {
+    const dir = await pickDirectory(t('pickDirTitle'))
+    if (!dir) {
+      setError(t('noDirChosen'))
+      return
+    }
+    const result = await updateSettings({ entitiesDir: dir })
+    const moved = result.moved ?? []
+    const errors = result.errors ?? []
+    const parts: string[] = [`${t('entitiesDirChanged')}: ${result.entitiesDir ?? dir}`]
+    if (moved.length > 0) parts.push(`${t('movedVersions')}: ${moved.join(', ')}`)
+    if (errors.length > 0) parts.push(`${t('moveErrors')}: ${errors.join('; ')}`)
+    setError(parts.join(' · '))
+    await refresh()
+  }, [t, refresh])
+
   return (
     <div className="app">
       <header className="app-header">
@@ -128,11 +144,12 @@ export function App() {
             <section className="panel">
               <div className="panel-head">
                 <h2>{t('entities')}</h2>
-                {entities.length > 0 && (
-                  <span className="actions">
+                <span className="actions">
+                  <button className="btn-secondary" onClick={() => void act(t('entitiesDirBusy'), changeEntitiesDir)}>{t('entitiesDir')}</button>
+                  {entities.length > 0 && (
                     <button className="btn-secondary" onClick={() => void act(t('exportAllBusy'), exportAllWithDir)}>{t('exportAll')}</button>
-                  </span>
-                )}
+                  )}
+                </span>
               </div>
               {entities.length === 0
                 ? <p className="muted">{t('noEntities')}</p>
@@ -500,12 +517,14 @@ function VersionsPanel(props: {
   const applyDataDir = () => {
     if (!pendingDir || pendingDir === settingsDir) return
     void act(t('applyingBusy'), async () => {
-      const result = await updateSettings(pendingDir)
-      setSettingsDir(result.versionsDir)
+      const result = await updateSettings({ versionsDir: pendingDir })
+      setSettingsDir(result.versionsDir ?? pendingDir)
       setModal(null)
-      const parts: string[] = [`${t('changedDir')}: ${result.versionsDir}`]
-      if (result.moved.length > 0) parts.push(`${t('movedVersions')}: ${result.moved.join(', ')}`)
-      if (result.errors.length > 0) parts.push(`${t('moveErrors')}: ${result.errors.join('; ')}`)
+      const moved = result.moved ?? []
+      const errors = result.errors ?? []
+      const parts: string[] = [`${t('changedDir')}: ${result.versionsDir ?? pendingDir}`]
+      if (moved.length > 0) parts.push(`${t('movedVersions')}: ${moved.join(', ')}`)
+      if (errors.length > 0) parts.push(`${t('moveErrors')}: ${errors.join('; ')}`)
       onNotice(parts.join(' · '))
       onRefresh()
     })
